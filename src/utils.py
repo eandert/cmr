@@ -6,7 +6,7 @@ class VehicleProbabilityManager:
     Manages the probability of vehicles being classified as a specific type (e.g., CAV).
     """
 
-    def __init__(self, probability, type, sumo_type):
+    def __init__(self, probability, type, sumo_type, vehicle_class=None):
         """
         Initializes the VehicleProbabilityManager.
 
@@ -21,6 +21,7 @@ class VehicleProbabilityManager:
         self.checked_vehicle_id_list = []
         self.type = type
         self.sumo_type = sumo_type
+        self.vehicle_class = vehicle_class
 
     def update_vehicles(self, traci_instance, vehicle_id_list):
         """
@@ -58,6 +59,15 @@ class VehicleProbabilityManager:
             list: A list of active vehicle IDs that are of the specified type.
         """
         return list(set(self.vehicle_list) & set(vehicle_ids))
+    
+    def get_vehicle_class(self):
+        """
+        Returns the vehicle class associated with the VehicleProbabilityManager.
+
+        Returns:
+            str: The vehicle class.
+        """
+        return self.vehicle_class
 
 class Polynomial:
     """

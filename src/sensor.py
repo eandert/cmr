@@ -192,8 +192,8 @@ def create_detected_bounding_boxes(sensor, sensor_pose, ground_truth_objects):
 
     for gt_obj in ground_truth_objects:
         # Calculate the relative position of the ground truth object to the sensor
-        dx = gt_obj.location[0] - sensor_x
-        dy = gt_obj.location[1] - sensor_y
+        dx = gt_obj.centroid[0] - sensor_x
+        dy = gt_obj.centroid[1] - sensor_y
         distance = math.sqrt(dx**2 + dy**2)
         angle_to_obj = math.atan2(dy, dx) - sensor_yaw
 
@@ -217,8 +217,8 @@ def create_detected_bounding_boxes(sensor, sensor_pose, ground_truth_objects):
                 expected_error_gaussian, actual_error = calculateErrorGaussian(angle_to_obj, radial_error, distance_error)
 
                 # Move the centroid using the actual error
-                new_centroid_x = gt_obj.location[0] + actual_error[0]
-                new_centroid_y = gt_obj.location[1] + actual_error[1]
+                new_centroid_x = gt_obj.centroid[0] + actual_error[0]
+                new_centroid_y = gt_obj.centroid[1] + actual_error[1]
 
                 # Calculate the new bounding box error
                 width_error, length_error = calculateBBoxError(bbox_error)

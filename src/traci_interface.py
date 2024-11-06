@@ -2,8 +2,9 @@ import traci
 import ground_truth
 import utils
 import sensor
+import cav
 from config import sensor_type, detector_type
-from metrics import minimum_safety_envelope
+from metrics import minimum_safety_envelope, time_to_collision
 
 # Start SUMO in server mode
 sumoBinary = "sumo-gui"  # or "sumo" if you don't need the GUI
@@ -12,9 +13,33 @@ traci.start(sumoCmd)
 
 # Initialize VehicleProbabilityManager for CAVs
 cav_manager = utils.VehicleProbabilityManager(probability=0.1, type="CAV", sumo_type="CAV_passenger")
+os1_pointpillars = sensor.Sensor(
+                sensor_type=sensor_type.SensorType.OS1_128,
+                detector_type=detector_type.DetectorType.POINT_PILLARS
+            )
+camera_yolo = sensor.Sensor(
+                sensor_type=sensor_type.SensorType.CAMERA,
+                detector_type=detector_type.DetectorType.YOLO
+            )
+# Example sensors and their extrinsics
+sensors = [
+    os1_pointpillars,
+    camera_yolo
+]
+sensors_extrinsics = [
+    (0.0, 0.0, 0.0),  # (x, y, yaw) relative to the CAV
+    (-1.0, 0.0, 0.0)
+]
+
 
 # Track the IDs of all polygons
 polygon_ids = []
+
+# Track total 
+total_mse_violations_gt = 0
+total_ttc_violations_gt = 0
+total_mse_violations_sensor = 0
+total_ttc_violations_sensor = 0
 
 # Simulation loop
 step = 0
@@ -35,23 +60,21 @@ while traci.simulation.getMinExpectedNumber() > 0:
     if step >= 1:
         cav_manager.update_vehicles(traci, vehicle_ids)
 
-    # Get active CAVs
-    cav_id_list = cav_manager.get_active_vehicles(vehicle_ids)
-
-    # Print the vehicle IDs
-    # print(cav_id_list)
-
     # Create ground truth data for all vehicles
     ground_truth_objects = ground_truth.create_ground_truth_from_list(traci, vehicle_ids)
 
-    # Draw the bounding boxes in SUMO
+    # Draw the bounding boxes in SUMO for debugging
     polygon_ids = []
     for gt_obj in ground_truth_objects:
-        # print(gt_obj)
-        gt_obj.draw_bounding_box_in_sumo(traci, layer=10)  # Ensure the bounding box is drawn on a higher layer
-        # gt_obj.draw_position_vector_in_sumo(traci, layer=11)  # Draw the position vector on a higher layer
+        gt_obj.draw_bounding_box_in_sumo(traci, layer=10)
+        # gt_obj.draw_position_vector_in_sumo(traci, layer=11)
         polygon_ids.append(f"bbox_{gt_obj.vehicle_id}")
         # polygon_ids.append(f"vector_{gt_obj.vehicle_id}")
+
+    # Get active CAVs
+    cav_id_list = cav_manager.get_active_vehicles(vehicle_ids)
+    ground_truth_objects = [ground_truth.create_ground_truth_by_id(traci, veh_id) for veh_id in vehicle_ids]
+    cav.create_detection_sets(ground_truth_objects, traci, polygon_ids)
 
     for cav_id in cav_id_list:
         # Get the ground truth object for the CAV
@@ -64,7 +87,7 @@ while traci.simulation.getMinExpectedNumber() > 0:
         )
 
         # Sensor pose is the center of the vehcile for this LIDAR sensor
-        sensor_pose = (cav_gt_obj.location[0], cav_gt_obj.location[1], cav_gt_obj.rotation)  # x, y, yaw
+        sensor_pose = (cav_gt_obj.centroid[0], cav_gt_obj.centroid[1], cav_gt_obj.rotation)  # x, y, yaw
 
         # Filter ground truth by range so that we don't do unnecessary calculations
         ground_truth_objects_filtered = ground_truth.filter_ground_truth_by_range(ground_truth_objects, sensor_pose[0], sensor_pose[1], cav_sensor.max_range)
@@ -78,10 +101,34 @@ while traci.simulation.getMinExpectedNumber() > 0:
 
         # TODO(eandert): Compare the filtered grount truth objects to the detected objects using AMOTA
 
-        # Calculate groudn truth MSE violations for the ego vehicle
+        # Calculate ground truth MSE violations for the ego vehicle
         violations = minimum_safety_envelope.calculate_mse_violations(cav_gt_obj, ground_truth_objects_filtered, category="Aggressive")
-        print(f"MSE Violations for vehicle {cav_gt_obj.vehicle_id}: {violations}")
+        total_mse_violations_gt += violations
+        # print(f"MSE Violations for vehicle {cav_gt_obj.vehicle_id}: {violations}")
+
+        # Calculate sensor based MSE violations for the ego vehicle
+        violations = minimum_safety_envelope.calculate_mse_violations(cav_gt_obj, detected_objects, category="Aggressive")
+        total_mse_violations_sensor += violations
+
+        # Calculate the time to collision for the ego vehicle with gt
+        ttc_violations = time_to_collision.calculate_ttc_violations(cav_gt_obj, ground_truth_objects_filtered)
+        total_ttc_violations_gt += ttc_violations
+        # print(f"TTC Violations for vehicle {cav_gt_obj.vehicle_id}: {ttc_violations}")
+
+        # Calculate the time to collision for the ego vehicle with sensor
+        ttc_violations = time_to_collision.calculate_ttc_violations(cav_gt_obj, detected_objects)
+        total_ttc_violations_sensor += ttc_violations
+
+    print(f"Total MSE Violations GT: {total_mse_violations_gt}")
+    print(f"Total MSE Violations Sensor: {total_mse_violations_sensor}")
+    print(f"Total TTC Violations: {total_ttc_violations_gt}")
+    print(f"Total TTC Violations Sensor: {total_ttc_violations_sensor}")
     
     step += 1
+
+print(f"Total MSE Violations GT: {total_mse_violations_gt}")
+print(f"Total MSE Violations Sensor: {total_mse_violations_sensor}")
+print(f"Total TTC Violations: {total_ttc_violations_gt}")
+print(f"Total TTC Violations Sensor: {total_ttc_violations_sensor}")
 
 traci.close()

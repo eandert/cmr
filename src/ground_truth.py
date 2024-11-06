@@ -7,13 +7,13 @@ class GroundTruthObject:
         self.type = vehicle_type
         self.bbox = bounding_box
         self.dimensions = [width, length]  # width, length
-        self.location = [position[0], position[1]]  # 2D location
+        self.centroid = [position[0], position[1]]  # 2D location
         self.rotation = angle_rad  # Store angle in radians
         self.velocity_vector = velocity_vector
 
     def __str__(self):
         return (f"Type: {self.type}, BBox: {self.bbox}, "
-                f"Dimensions: {self.dimensions}, Location: {self.location}, "
+                f"Dimensions: {self.dimensions}, Location: {self.centroid}, "
                 f"Rotation: {math.degrees(self.rotation)}°, Velocity Vector: {self.velocity_vector}")
 
     def draw_bounding_box_in_sumo(self, traci_instance, color=(255, 0, 0, 255), layer=10):
@@ -47,7 +47,7 @@ class GroundTruthObject:
             length (float): The length of the position vector. Defaults to 5.
             layer (int): The layer to draw the polygon on. Higher values are drawn on top of lower values. Defaults to 11.
         """
-        cx, cy = self.location
+        cx, cy = self.centroid
         angle_rad = self.rotation - math.pi / 2  # Adjusting the angle by -90 degrees
         end_x = cx + length * math.cos(angle_rad)
         end_y = cy + length * math.sin(angle_rad)
@@ -147,7 +147,7 @@ def filter_ground_truth_by_range(ground_truth_objects, x, y, range):
     """
     filtered_objects = []
     for obj in ground_truth_objects:
-        distance = math.sqrt((obj.location[0] - x)**2 + (obj.location[1] - y)**2)
+        distance = math.sqrt((obj.centroid[0] - x)**2 + (obj.centroid[1] - y)**2)
         if distance <= range:
             filtered_objects.append(obj)
     return filtered_objects
