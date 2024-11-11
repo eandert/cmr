@@ -1,7 +1,11 @@
 import math
 import random
-import cav
+import sensor_package
+import re
 import numpy as np
+from shapely.geometry import Polygon
+from shapely.geometry import box, Point
+from shapely.affinity import rotate, translate
 
 class VehicleProbabilityManager:
     """
@@ -49,9 +53,9 @@ class VehicleProbabilityManager:
                     traci_instance.vehicle.setType(vehicle_id, self.sumo_type)
                     # Create a new instance of the vehicle class with a selected sensor package
                     if self.sensor_packages:
-                        sensor_package = self.select_sensor_package()
-                        print(f"Selected sensor package for {vehicle_id}: {sensor_package}")
-                        self.vehicle_instances[vehicle_id] = cav.CAV(vehicle_id, sensor_package[0], sensor_package[1])
+                        sp = self.select_sensor_package()
+                        # print(f"Selected sensor package for {vehicle_id}: {sensor_package}")
+                        self.vehicle_instances[vehicle_id] = sensor_package.SensorPackage(vehicle_id, sp[0], sp[1])
                 except Exception as e:
                     print(f"ERROR: Couldn't add {self.type}: ", e)
 
@@ -104,6 +108,103 @@ class VehicleProbabilityManager:
             list: A list of active vehicle instances that are of the specified type.
         """
         return list(self.vehicle_instances.values())
+
+class TrafficLightProbabilityManager:
+    """
+    Manages the probability of traffic lights being outfitted with cameras.
+    """
+
+    def __init__(self, probability, traci_instance, sensor_packages=None):
+        """
+        Initializes the TrafficLightProbabilityManager.
+
+        Args:
+            probability (float): The probability of a traffic light being outfitted with an RSU.
+            sensor_packages (list): A list of tuples containing the probability, sensors, and sensors' extrinsics.
+        """
+        self.probability = probability
+        self.tracked_tfls = {}
+        self.tracked_tfl_total = 0
+        self.tracked_tfl_total_possible = 0
+        self.sensor_packages = sensor_packages if sensor_packages else []
+        self.position = None
+
+        # Initialize the traffic lights once
+        self.initialize_traffic_lights(traci_instance)
+
+    def initialize_traffic_lights(self, traci_instance):
+        """
+        Initializes the list of traffic lights and adds cameras based on the specified probability.
+        """
+        # Get the list of traffic light IDs
+        tfl = traci_instance.trafficlight.getIDList()
+
+        for light in tfl:
+            if light.find("joined") == -1:
+                self.tracked_tfl_total_possible += 1
+                # Add to list based on probability
+                if random.random() <= self.probability:
+                    self.position = traci_instance.junction.getPosition(light.replace("GS_", "", 1))
+                    if self.sensor_packages:
+                        sp = self.select_sensor_package()
+                        self.tracked_tfls[light] = sensor_package.SensorPackage(light, sp[0], sp[1])
+                    else:
+                        self.tracked_tfls[light] = None
+                    self.tracked_tfl_total += 1
+
+    def select_sensor_package(self):
+        """
+        Selects a sensor package based on the distribution within the sensor_packages tuple.
+
+        Returns:
+            tuple: The selected sensor package (sensors, sensors_extrinsics).
+        """
+        total_probability = sum(package[0] for package in self.sensor_packages)
+        randomnum = random.uniform(0, total_probability)
+        cumulative_probability = 0.0
+
+        for probability, sensors, sensors_extrinsics in self.sensor_packages:
+            cumulative_probability += probability
+            if randomnum <= cumulative_probability:
+                return sensors, sensors_extrinsics
+
+        return None, None  # Fallback to None as we may not have a sensor package, e.g. just a fusion position
+
+    def get_tracked_traffic_light_ids(self):
+        """
+        Returns the list of tracked traffic light IDs.
+
+        Returns:
+            list: A list of tracked traffic light IDs.
+        """
+        return list(self.tracked_tfls.keys())
+
+    def get_tracked_traffic_light_instances(self):
+        """
+        Returns the list of tracked traffic light instances.
+
+        Returns:
+            list: A list of tracked traffic light instances.
+        """
+        return list(self.tracked_tfls.values())
+
+    def get_tracked_traffic_light_total(self):
+        """
+        Returns the total number of tracked traffic lights.
+
+        Returns:
+            int: The total number of tracked traffic lights.
+        """
+        return self.tracked_tfl_total
+
+    def get_tracked_traffic_light_total_possible(self):
+        """
+        Returns the total number of possible tracked traffic lights.
+
+        Returns:
+            int: The total number of possible tracked traffic lights.
+        """
+        return self.tracked_tfl_total_possible
 
 class Polynomial:
     """
@@ -222,3 +323,125 @@ def ellipsify(covariance, num_std_deviations = 3.0):
         b = 0.0
 
     return a, b, phi
+
+# This function turns x, y, width, height, and angle into rotated rectangles so that an IoU calculation can be done for BallTree matching
+def computeDistanceBBox(a, b):
+    # Create the first rotated bounding box
+    cx_a = a[0]
+    cy_a = a[1]
+    w_a = a[2]
+    h_a = a[3]
+    angle_a = a[4]
+    c_a = box(-w_a/2.0, -h_a/2.0, w_a/2.0, h_a/2.0)
+    rc_a = rotate(c_a, angle_a, use_radians=True)
+    contour_a = translate(rc_a, cx_a, cy_a)
+
+    # Create the second rotated bounding box
+    cx_b = b[0]
+    cy_b = b[1]
+    w_b = b[2]
+    h_b = b[3]
+    angle_b = b[4]
+    c_b = box(-w_b/2.0, -h_b/2.0, w_b/2.0, h_b/2.0)
+    rc_b = rotate(c_b, angle_b, use_radians=True)
+    contour_b = translate(rc_b, cx_b, cy_b)
+
+    # Calculate the Intersection over Union (IoU)
+    intersection_area = contour_a.intersection(contour_b).area
+    union_area = contour_a.union(contour_b).area
+    iou = intersection_area / union_area
+
+    # Invert the IoU to use it as a distance metric
+    if iou <= 0:
+        distance = 1
+    else:
+        distance = 1 - iou
+
+    return distance
+
+# This function calculates the IOU between two rectangular bounding boxes with x, y, width, height, and angle
+def computeDistanceEuclidean(a, b):
+    cx = b[0]
+    cy = b[1]
+    w = b[2]
+    h = b[3]
+    angle = a[4]
+    c = box(-w/2.0, -h/2.0, w/2.0, h/2.0)
+    rc = rotate(c, angle)
+    contour_b = translate(rc, cx, cy)
+
+    # If the boxes intersect, then we are within the gate of both
+    if contour_b.contains(Point(a[0], a[1])):
+        distance = math.sqrt((a[0] - b[0])**2 + (a[1] - b[1])**2)
+        return distance / 100.0
+    else:
+        return 1
+    
+def calculate_amota(detected_objects, ground_truth_objects, iou_threshold=0.5):
+    """
+    Calculate the Average Multi-Object Tracking Accuracy (AMOTA).
+    
+    Parameters:
+    detected_objects (list): List of detected objects.
+    ground_truth_objects (list): List of ground truth objects.
+    iou_threshold (float): Intersection over Union (IoU) threshold to consider a match.
+    
+    Returns:
+    float: The AMOTA score.
+    """
+    total_matches = 0
+    total_ground_truth = len(ground_truth_objects)
+    total_detected = len(detected_objects)
+    
+    if total_ground_truth == 0:
+        return 0.0
+
+    # Create a list to keep track of matched ground truth objects
+    matched_gt = [False] * total_ground_truth
+
+    # Example: Count matches based on some criteria (e.g., IoU threshold)
+    for det in detected_objects:
+        for i, gt in enumerate(ground_truth_objects):
+            if not matched_gt[i] and iou(gt.bbox, det.detected_bbox) > iou_threshold:
+                total_matches += 1
+                matched_gt[i] = True
+                break
+
+    # Calculate precision and recall
+    precision = total_matches / total_detected if total_detected > 0 else 0
+    recall = total_matches / total_ground_truth
+
+    # Calculate AMOTA score
+    amota = (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+    
+    return amota
+
+def iou(bbox1, bbox2):
+    """
+    Calculate Intersection over Union (IoU) between two bounding boxes.
+    
+    Parameters:
+    bbox1 (list): Bounding box 1 coordinates.
+    bbox2 (list): Bounding box 2 coordinates.
+    
+    Returns:
+    float: IoU score.
+    """
+    poly1 = Polygon(bbox1)
+    poly2 = Polygon(bbox2)
+    intersection_area = poly1.intersection(poly2).area
+    union_area = poly1.union(poly2).area
+    return intersection_area / union_area if union_area != 0 else 0
+
+def extract_id(string_id):
+    """
+    Extracts the integer value from the cav_id string.
+    
+    Args:
+        cav_id (str): The ID of the CAV.
+    
+    Returns:
+        int: The extracted integer value.
+    """
+    match = re.search(r'\d+', string_id)
+    return int(match.group()) if match else None

@@ -1,0 +1,543 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<osm version="0.6" generator="Overpass API 0.7.56.2 b688b00f">
+<note>The data included in this document is from www.openstreetmap.org. The data is made available under ODbL.</note>
+<meta osm_base="2020-03-03T21:54:02Z"/>
+
+  <node id="41286594" lat="33.2192409" lon="-111.9228000">
+    <tag k="highway" v="traffic_signals"/>
+    <tag k="source" v="Bing"/>
+  </node>
+  <node id="41622345" lat="33.2130724" lon="-111.9910596"/>
+  <node id="41622348" lat="33.2156028" lon="-111.9902232"/>
+  <node id="41622350" lat="33.2192297" lon="-111.9890010">
+    <tag k="highway" v="traffic_signals"/>
+  </node>
+  <node id="41622355" lat="33.2204566" lon="-111.9886158"/>
+  <node id="41622357" lat="33.2246095" lon="-111.9872466"/>
+  <node id="41622358" lat="33.2329403" lon="-111.9844908"/>
+  <node id="41622361" lat="33.2342266" lon="-111.9840549"/>
+  <node id="41622363" lat="33.2383196" lon="-111.9827084"/>
+  <node id="41678251" lat="33.2192414" lon="-112.0317687"/>
+  <node id="41980630" lat="33.2192403" lon="-112.0474468"/>
+  <node id="42680955" lat="33.2192491" lon="-111.9269008"/>
+  <node id="42680963" lat="33.2192472" lon="-111.9532423"/>
+  <node id="42680974" lat="33.2192460" lon="-111.9693269"/>
+  <node id="42680982" lat="33.2192453" lon="-111.9782705"/>
+  <node id="42680998" lat="33.2192138" lon="-111.9955139"/>
+  <node id="42681001" lat="33.2192437" lon="-112.0007194"/>
+  <node id="42681004" lat="33.2192435" lon="-112.0028115"/>
+  <node id="42681009" lat="33.2192428" lon="-112.0124460"/>
+  <node id="42681012" lat="33.2192427" lon="-112.0138300"/>
+  <node id="42681014" lat="33.2192426" lon="-112.0159329"/>
+  <node id="42681017" lat="33.2192421" lon="-112.0221771"/>
+  <node id="42681023" lat="33.2192404" lon="-112.0451153"/>
+  <node id="42681028" lat="33.2192404" lon="-112.0457161"/>
+  <node id="255700998" lat="33.2463258" lon="-111.9800670"/>
+  <node id="390563196" lat="33.2430637" lon="-111.9811508"/>
+  <node id="390563197" lat="33.2414301" lon="-111.9816793"/>
+  <node id="390563198" lat="33.2364385" lon="-111.9833294"/>
+  <node id="390563199" lat="33.2300861" lon="-111.9854309"/>
+  <node id="390563200" lat="33.2284348" lon="-111.9859795"/>
+  <node id="390563201" lat="33.2267127" lon="-111.9865421"/>
+  <node id="390563202" lat="33.2218778" lon="-111.9881502"/>
+  <node id="1497855182" lat="33.2299873" lon="-111.9852250"/>
+  <node id="1497855186" lat="33.2465452" lon="-111.9797576"/>
+  <node id="1497855192" lat="33.2217820" lon="-111.9879367"/>
+  <node id="1497855209" lat="33.2173891" lon="-111.9896198"/>
+  <node id="1497855214" lat="33.2442801" lon="-111.9804990"/>
+  <node id="1497855221" lat="33.2341513" lon="-111.9838544"/>
+  <node id="1497855223" lat="33.2382434" lon="-111.9824999"/>
+  <node id="1497855245" lat="33.2443238" lon="-111.9807240"/>
+  <node id="1497855271" lat="33.2317743" lon="-111.9848694"/>
+  <node id="1497855313" lat="33.2284123" lon="-111.9857507"/>
+  <node id="1497855319" lat="33.2245078" lon="-111.9870353"/>
+  <node id="1497855347" lat="33.2413566" lon="-111.9814715"/>
+  <node id="1497855354" lat="33.2317104" lon="-111.9846591"/>
+  <node id="1497855370" lat="33.2393914" lon="-111.9821233"/>
+  <node id="1497855375" lat="33.2455203" lon="-111.9803324"/>
+  <node id="1497855385" lat="33.2173436" lon="-111.9894093"/>
+  <node id="1497855406" lat="33.2455319" lon="-111.9800886"/>
+  <node id="1497855427" lat="33.2154806" lon="-111.9900251"/>
+  <node id="1497855452" lat="33.2429858" lon="-111.9809362"/>
+  <node id="1497855504" lat="33.2394615" lon="-111.9823345"/>
+  <node id="1497855507" lat="33.2363791" lon="-111.9831195"/>
+  <node id="1497855514" lat="33.2266257" lon="-111.9863317"/>
+  <node id="1497855558" lat="33.2192385" lon="-111.9887789">
+    <tag k="highway" v="traffic_signals"/>
+  </node>
+  <node id="4857032030" lat="33.2204099" lon="-111.9883981"/>
+  <node id="4857032031" lat="33.2182670" lon="-111.9891049"/>
+  <node id="4857032032" lat="33.2183186" lon="-111.9893262"/>
+  <node id="4857032033" lat="33.2371427" lon="-111.9831028"/>
+  <node id="4857032034" lat="33.2372816" lon="-111.9830570"/>
+  <node id="4857032035" lat="33.2370898" lon="-111.9828826"/>
+  <node id="4857032036" lat="33.2372322" lon="-111.9828353"/>
+  <node id="5147600715" lat="33.2111146" lon="-111.9917074"/>
+  <node id="5147600716" lat="33.2198456" lon="-111.9888076"/>
+  <node id="5147603028" lat="33.2186353" lon="-111.9889813"/>
+  <node id="5147603048" lat="33.2192278" lon="-111.9897634"/>
+  <node id="5147603049" lat="33.2192390" lon="-111.9880575"/>
+  <node id="5152877381" lat="33.2466018" lon="-111.9799760"/>
+  <node id="5780841262" lat="33.2192166" lon="-111.9943714"/>
+  <node id="6718651420" lat="33.2192238" lon="-111.9623535"/>
+  <way id="28882735">
+    <nd ref="41980630"/>
+    <nd ref="42681028"/>
+    <nd ref="42681023"/>
+    <nd ref="41678251"/>
+    <nd ref="42681017"/>
+    <nd ref="42681014"/>
+    <nd ref="42681012"/>
+    <nd ref="42681009"/>
+    <nd ref="42681004"/>
+    <nd ref="42681001"/>
+    <nd ref="42680998"/>
+    <nd ref="5780841262"/>
+    <nd ref="5147603048"/>
+    <tag k="highway" v="primary"/>
+    <tag k="lanes" v="2"/>
+    <tag k="lanes:backward" v="1"/>
+    <tag k="lanes:forward" v="1"/>
+    <tag k="maxspeed" v="55 mph"/>
+    <tag k="name" v="Riggs Road"/>
+    <tag k="oneway" v="no"/>
+    <tag k="smoothness" v="good"/>
+    <tag k="surface" v="asphalt"/>
+  </way>
+  <way id="493829230">
+    <nd ref="5152877381"/>
+    <nd ref="255700998"/>
+    <nd ref="1497855375"/>
+    <nd ref="1497855245"/>
+    <nd ref="390563196"/>
+    <nd ref="390563197"/>
+    <nd ref="1497855504"/>
+    <nd ref="41622363"/>
+    <nd ref="4857032034"/>
+    <nd ref="4857032033"/>
+    <nd ref="390563198"/>
+    <nd ref="41622361"/>
+    <nd ref="41622358"/>
+    <nd ref="1497855271"/>
+    <nd ref="390563199"/>
+    <nd ref="390563200"/>
+    <nd ref="390563201"/>
+    <nd ref="41622357"/>
+    <nd ref="390563202"/>
+    <nd ref="41622355"/>
+    <nd ref="5147600716"/>
+    <tag k="adot_name" v="Maricopa Road"/>
+    <tag k="highway" v="primary"/>
+    <tag k="is_in" v="Maricopa, AZ"/>
+    <tag k="lanes" v="2"/>
+    <tag k="lit" v="no"/>
+    <tag k="maxspeed" v="65 mph"/>
+    <tag k="name" v="North Maricopa Road"/>
+    <tag k="oneway" v="yes"/>
+    <tag k="ref" v="AZ 347"/>
+    <tag k="smoothness" v="good"/>
+    <tag k="surface" v="asphalt"/>
+  </way>
+  <way id="528586901">
+    <nd ref="4857032030"/>
+    <nd ref="1497855192"/>
+    <nd ref="1497855319"/>
+    <nd ref="1497855514"/>
+    <nd ref="1497855313"/>
+    <nd ref="1497855182"/>
+    <nd ref="1497855354"/>
+    <nd ref="1497855221"/>
+    <nd ref="1497855507"/>
+    <nd ref="4857032035"/>
+    <nd ref="4857032036"/>
+    <nd ref="1497855223"/>
+    <nd ref="1497855370"/>
+    <nd ref="1497855347"/>
+    <nd ref="1497855452"/>
+    <nd ref="1497855214"/>
+    <nd ref="1497855406"/>
+    <nd ref="1497855186"/>
+    <tag k="adot_name" v="Maricopa Road"/>
+    <tag k="highway" v="primary"/>
+    <tag k="lanes" v="2"/>
+    <tag k="lit" v="no"/>
+    <tag k="maxspeed" v="65 mph"/>
+    <tag k="name" v="North Maricopa Road"/>
+    <tag k="oneway" v="yes"/>
+    <tag k="ref" v="AZ 347"/>
+    <tag k="smoothness" v="good"/>
+    <tag k="source" v="Bing"/>
+    <tag k="source:name" v="TIGER"/>
+    <tag k="surface" v="asphalt"/>
+  </way>
+  <way id="528586909">
+    <nd ref="1497855427"/>
+    <nd ref="1497855385"/>
+    <nd ref="4857032031"/>
+    <nd ref="5147603028"/>
+    <tag k="adot_name" v="Maricopa Road"/>
+    <tag k="highway" v="primary"/>
+    <tag k="lanes" v="2"/>
+    <tag k="lit" v="no"/>
+    <tag k="maxspeed" v="55 mph"/>
+    <tag k="name" v="North Maricopa Road"/>
+    <tag k="oneway" v="yes"/>
+    <tag k="ref" v="AZ 347"/>
+    <tag k="smoothness" v="good"/>
+    <tag k="source" v="Bing"/>
+    <tag k="source:name" v="TIGER"/>
+    <tag k="surface" v="asphalt"/>
+  </way>
+  <way id="529995102">
+    <nd ref="5147600716"/>
+    <nd ref="41622350"/>
+    <tag k="adot_name" v="Maricopa Road"/>
+    <tag k="highway" v="primary"/>
+    <tag k="is_in" v="Maricopa, AZ"/>
+    <tag k="lanes" v="4"/>
+    <tag k="lit" v="no"/>
+    <tag k="maxspeed" v="65 mph"/>
+    <tag k="name" v="North Maricopa Road"/>
+    <tag k="oneway" v="yes"/>
+    <tag k="ref" v="AZ 347"/>
+    <tag k="smoothness" v="good"/>
+    <tag k="surface" v="asphalt"/>
+    <tag k="turn:lanes" v="left|||right"/>
+  </way>
+  <way id="529995106">
+    <nd ref="4857032032"/>
+    <nd ref="1497855209"/>
+    <nd ref="41622348"/>
+    <nd ref="41622345"/>
+    <nd ref="5147600715"/>
+    <tag k="adot_name" v="Maricopa Road"/>
+    <tag k="highway" v="primary"/>
+    <tag k="is_in" v="Maricopa, AZ"/>
+    <tag k="lanes" v="2"/>
+    <tag k="lit" v="no"/>
+    <tag k="maxspeed" v="65 mph"/>
+    <tag k="name" v="North Maricopa Road"/>
+    <tag k="oneway" v="yes"/>
+    <tag k="ref" v="AZ 347"/>
+    <tag k="smoothness" v="good"/>
+    <tag k="surface" v="asphalt"/>
+  </way>
+  <way id="529995168">
+    <nd ref="1497855558"/>
+    <nd ref="4857032030"/>
+    <tag k="adot_name" v="Maricopa Road"/>
+    <tag k="highway" v="primary"/>
+    <tag k="lanes" v="2"/>
+    <tag k="lit" v="no"/>
+    <tag k="maxspeed" v="55 mph"/>
+    <tag k="name" v="North Maricopa Road"/>
+    <tag k="oneway" v="yes"/>
+    <tag k="ref" v="AZ 347"/>
+    <tag k="smoothness" v="good"/>
+    <tag k="source" v="Bing"/>
+    <tag k="source:name" v="TIGER"/>
+    <tag k="surface" v="asphalt"/>
+  </way>
+  <way id="529995172">
+    <nd ref="5147603028"/>
+    <nd ref="1497855558"/>
+    <tag k="adot_name" v="Maricopa Road"/>
+    <tag k="highway" v="primary"/>
+    <tag k="lanes" v="4"/>
+    <tag k="lit" v="no"/>
+    <tag k="maxspeed" v="55 mph"/>
+    <tag k="name" v="North Maricopa Road"/>
+    <tag k="oneway" v="yes"/>
+    <tag k="ref" v="AZ 347"/>
+    <tag k="smoothness" v="good"/>
+    <tag k="source" v="Bing"/>
+    <tag k="source:name" v="TIGER"/>
+    <tag k="surface" v="asphalt"/>
+    <tag k="turn:lanes" v="left|||right"/>
+  </way>
+  <way id="529995287">
+    <nd ref="5147603048"/>
+    <nd ref="41622350"/>
+    <tag k="highway" v="primary"/>
+    <tag k="lanes" v="3"/>
+    <tag k="lanes:backward" v="1"/>
+    <tag k="lanes:forward" v="2"/>
+    <tag k="maxspeed" v="55 mph"/>
+    <tag k="name" v="Riggs Road"/>
+    <tag k="oneway" v="no"/>
+    <tag k="smoothness" v="good"/>
+    <tag k="surface" v="asphalt"/>
+    <tag k="turn:lanes:forward" v="left|"/>
+  </way>
+  <way id="529995291">
+    <nd ref="41622350"/>
+    <nd ref="1497855558"/>
+    <tag k="highway" v="primary"/>
+    <tag k="lanes" v="3"/>
+    <tag k="lanes:backward" v="2"/>
+    <tag k="lanes:forward" v="1"/>
+    <tag k="maxspeed" v="55 mph"/>
+    <tag k="name" v="Riggs Road"/>
+    <tag k="oneway" v="no"/>
+    <tag k="smoothness" v="good"/>
+    <tag k="surface" v="asphalt"/>
+  </way>
+  <way id="529995295">
+    <nd ref="1497855558"/>
+    <nd ref="5147603049"/>
+    <tag k="highway" v="primary"/>
+    <tag k="lanes" v="3"/>
+    <tag k="lanes:backward" v="2"/>
+    <tag k="lanes:forward" v="1"/>
+    <tag k="maxspeed" v="55 mph"/>
+    <tag k="name" v="Riggs Road"/>
+    <tag k="oneway" v="no"/>
+    <tag k="smoothness" v="good"/>
+    <tag k="surface" v="asphalt"/>
+    <tag k="turn:lanes:backward" v="left|"/>
+  </way>
+  <way id="529995300">
+    <nd ref="5147603049"/>
+    <nd ref="42680982"/>
+    <nd ref="42680974"/>
+    <nd ref="6718651420"/>
+    <nd ref="42680963"/>
+    <nd ref="42680955"/>
+    <nd ref="41286594"/>
+    <tag k="highway" v="primary"/>
+    <tag k="lanes" v="2"/>
+    <tag k="lanes:backward" v="1"/>
+    <tag k="lanes:forward" v="1"/>
+    <tag k="maxspeed" v="55 mph"/>
+    <tag k="name" v="Riggs Road"/>
+    <tag k="oneway" v="no"/>
+    <tag k="smoothness" v="good"/>
+    <tag k="surface" v="asphalt"/>
+  </way>
+  <way id="533163353">
+    <nd ref="41622350"/>
+    <nd ref="4857032032"/>
+    <tag k="adot_name" v="Maricopa Road"/>
+    <tag k="highway" v="primary"/>
+    <tag k="is_in" v="Maricopa, AZ"/>
+    <tag k="lanes" v="2"/>
+    <tag k="lit" v="no"/>
+    <tag k="maxspeed" v="65 mph"/>
+    <tag k="name" v="North Maricopa Road"/>
+    <tag k="oneway" v="yes"/>
+    <tag k="ref" v="AZ 347"/>
+    <tag k="smoothness" v="good"/>
+    <tag k="surface" v="asphalt"/>
+  </way>
+  <relation id="1502484">
+    <member type="way" ref="529386857" role=""/>
+    <member type="way" ref="529386854" role=""/>
+    <member type="way" ref="93285550" role=""/>
+    <member type="way" ref="529386848" role=""/>
+    <member type="way" ref="16917597" role=""/>
+    <member type="way" ref="131623742" role=""/>
+    <member type="way" ref="169482311" role=""/>
+    <member type="way" ref="162975661" role=""/>
+    <member type="way" ref="529388598" role=""/>
+    <member type="way" ref="529401892" role=""/>
+    <member type="way" ref="529401891" role=""/>
+    <member type="way" ref="570332082" role=""/>
+    <member type="way" ref="169482320" role=""/>
+    <member type="way" ref="529401883" role=""/>
+    <member type="way" ref="529401882" role=""/>
+    <member type="way" ref="529401879" role=""/>
+    <member type="way" ref="529401878" role=""/>
+    <member type="way" ref="529401871" role=""/>
+    <member type="way" ref="529401884" role=""/>
+    <member type="way" ref="529401870" role=""/>
+    <member type="way" ref="529401869" role=""/>
+    <member type="way" ref="529401868" role=""/>
+    <member type="way" ref="612074666" role=""/>
+    <member type="way" ref="612074667" role=""/>
+    <member type="way" ref="131623744" role=""/>
+    <member type="way" ref="529401864" role=""/>
+    <member type="way" ref="529401865" role=""/>
+    <member type="way" ref="529401859" role=""/>
+    <member type="way" ref="704717956" role=""/>
+    <member type="way" ref="612066317" role=""/>
+    <member type="way" ref="704717949" role=""/>
+    <member type="way" ref="704717948" role=""/>
+    <member type="way" ref="612066316" role=""/>
+    <member type="way" ref="738459903" role=""/>
+    <member type="way" ref="704717965" role=""/>
+    <member type="way" ref="612066315" role=""/>
+    <member type="way" ref="529426613" role="forward"/>
+    <member type="way" ref="529426610" role="forward"/>
+    <member type="way" ref="529426606" role="forward"/>
+    <member type="way" ref="529442222" role="forward"/>
+    <member type="way" ref="529442224" role="forward"/>
+    <member type="way" ref="529442223" role="forward"/>
+    <member type="way" ref="529442221" role="forward"/>
+    <member type="way" ref="529442220" role="forward"/>
+    <member type="way" ref="529442219" role="forward"/>
+    <member type="way" ref="529442215" role="forward"/>
+    <member type="way" ref="529442212" role="forward"/>
+    <member type="way" ref="529442213" role="forward"/>
+    <member type="way" ref="169483345" role=""/>
+    <member type="way" ref="169482308" role=""/>
+    <member type="way" ref="529388599" role=""/>
+    <member type="way" ref="169482303" role=""/>
+    <member type="way" ref="529401893" role=""/>
+    <member type="way" ref="529401889" role=""/>
+    <member type="way" ref="529401890" role=""/>
+    <member type="way" ref="529401886" role=""/>
+    <member type="way" ref="529401885" role=""/>
+    <member type="way" ref="529401881" role=""/>
+    <member type="way" ref="529401880" role=""/>
+    <member type="way" ref="529401877" role=""/>
+    <member type="way" ref="529401874" role=""/>
+    <member type="way" ref="529401867" role=""/>
+    <member type="way" ref="529401866" role=""/>
+    <member type="way" ref="612074668" role=""/>
+    <member type="way" ref="169483344" role=""/>
+    <member type="way" ref="232029895" role=""/>
+    <member type="way" ref="529401863" role=""/>
+    <member type="way" ref="612066318" role=""/>
+    <member type="way" ref="704717958" role=""/>
+    <member type="way" ref="612066314" role=""/>
+    <member type="way" ref="704717950" role=""/>
+    <member type="way" ref="704717947" role=""/>
+    <member type="way" ref="612066313" role=""/>
+    <member type="way" ref="738459901" role=""/>
+    <member type="way" ref="704717963" role=""/>
+    <member type="way" ref="540427679" role="forward"/>
+    <member type="way" ref="131623741" role="forward"/>
+    <member type="way" ref="529442226" role="forward"/>
+    <member type="way" ref="529442225" role="forward"/>
+    <member type="way" ref="529442218" role="forward"/>
+    <member type="way" ref="529442214" role="forward"/>
+    <member type="way" ref="529442216" role="forward"/>
+    <member type="way" ref="529442211" role="forward"/>
+    <member type="way" ref="529442204" role="forward"/>
+    <member type="way" ref="529442201" role="forward"/>
+    <member type="way" ref="529442200" role="forward"/>
+    <member type="way" ref="529442198" role="forward"/>
+    <member type="way" ref="529442196" role="forward"/>
+    <member type="way" ref="529442194" role="forward"/>
+    <member type="way" ref="529442193" role="forward"/>
+    <member type="way" ref="131623746" role="forward"/>
+    <member type="way" ref="533157476" role="forward"/>
+    <member type="way" ref="121878946" role="forward"/>
+    <member type="way" ref="529442170" role="forward"/>
+    <member type="way" ref="533156520" role="forward"/>
+    <member type="way" ref="529442156" role="forward"/>
+    <member type="way" ref="529442141" role="forward"/>
+    <member type="way" ref="529442136" role="forward"/>
+    <member type="way" ref="529442131" role="forward"/>
+    <member type="way" ref="529442126" role="forward"/>
+    <member type="way" ref="528585483" role="forward"/>
+    <member type="way" ref="16933588" role="forward"/>
+    <member type="way" ref="136546805" role="forward"/>
+    <member type="way" ref="136546815" role="forward"/>
+    <member type="way" ref="136546810" role="forward"/>
+    <member type="way" ref="529442106" role="forward"/>
+    <member type="way" ref="529442098" role="forward"/>
+    <member type="way" ref="533155026" role="forward"/>
+    <member type="way" ref="533155023" role="forward"/>
+    <member type="way" ref="239147738" role="forward"/>
+    <member type="way" ref="528585482" role="forward"/>
+    <member type="way" ref="528586902" role="forward"/>
+    <member type="way" ref="136546809" role="forward"/>
+    <member type="way" ref="529365929" role="forward"/>
+    <member type="way" ref="529365928" role="forward"/>
+    <member type="way" ref="533159618" role="forward"/>
+    <member type="way" ref="136546816" role="forward"/>
+    <member type="way" ref="528586904" role="forward"/>
+    <member type="way" ref="493829232" role="forward"/>
+    <member type="way" ref="529995177" role="forward"/>
+    <member type="way" ref="528586909" role="forward"/>
+    <member type="way" ref="529995172" role="forward"/>
+    <member type="way" ref="529995168" role="forward"/>
+    <member type="way" ref="528586901" role="forward"/>
+    <member type="way" ref="528586903" role="forward"/>
+    <member type="way" ref="529995110" role="forward"/>
+    <member type="way" ref="533162761" role="forward"/>
+    <member type="way" ref="136546808" role="forward"/>
+    <member type="way" ref="528586906" role="forward"/>
+    <member type="way" ref="529995128" role="forward"/>
+    <member type="way" ref="493829227" role="forward"/>
+    <member type="way" ref="529995124" role="forward"/>
+    <member type="way" ref="136546814" role="forward"/>
+    <member type="way" ref="136546811" role="forward"/>
+    <member type="way" ref="529995117" role="forward"/>
+    <member type="way" ref="105500699" role="forward"/>
+    <member type="way" ref="28896470" role="forward"/>
+    <member type="way" ref="493829228" role="forward"/>
+    <member type="way" ref="529995121" role="forward"/>
+    <member type="way" ref="28896476" role="forward"/>
+    <member type="way" ref="529995114" role="forward"/>
+    <member type="way" ref="533162758" role="forward"/>
+    <member type="way" ref="530712716" role="forward"/>
+    <member type="way" ref="493829230" role="forward"/>
+    <member type="way" ref="529995102" role="forward"/>
+    <member type="way" ref="533163353" role="forward"/>
+    <member type="way" ref="529995106" role="forward"/>
+    <member type="way" ref="529995098" role="forward"/>
+    <member type="way" ref="136546807" role="forward"/>
+    <member type="way" ref="528510300" role="forward"/>
+    <member type="way" ref="529365926" role="forward"/>
+    <member type="way" ref="533159620" role="forward"/>
+    <member type="way" ref="529365927" role="forward"/>
+    <member type="way" ref="528510299" role="forward"/>
+    <member type="way" ref="136546812" role="forward"/>
+    <member type="way" ref="136546802" role="forward"/>
+    <member type="way" ref="529442092" role="forward"/>
+    <member type="way" ref="528511558" role="forward"/>
+    <member type="way" ref="533155024" role="forward"/>
+    <member type="way" ref="529442086" role="forward"/>
+    <member type="way" ref="533155025" role="forward"/>
+    <member type="way" ref="136546806" role="forward"/>
+    <member type="way" ref="136546804" role="forward"/>
+    <member type="way" ref="528511560" role="forward"/>
+    <member type="way" ref="136546817" role="forward"/>
+    <member type="way" ref="136546803" role="forward"/>
+    <member type="way" ref="528511559" role="forward"/>
+    <member type="way" ref="136548198" role="forward"/>
+    <member type="way" ref="529442121" role="forward"/>
+    <member type="way" ref="529442115" role="forward"/>
+    <member type="way" ref="529442110" role="forward"/>
+    <member type="way" ref="136548193" role="forward"/>
+    <member type="way" ref="529442145" role="forward"/>
+    <member type="way" ref="529442151" role="forward"/>
+    <member type="way" ref="529442161" role="forward"/>
+    <member type="way" ref="529442166" role="forward"/>
+    <member type="way" ref="529442190" role="forward"/>
+    <member type="way" ref="529442175" role="forward"/>
+    <member type="way" ref="529442181" role="forward"/>
+    <member type="way" ref="529442185" role="forward"/>
+    <member type="way" ref="528511557" role="forward"/>
+    <member type="way" ref="533157479" role="forward"/>
+    <member type="way" ref="548566221" role="forward"/>
+    <member type="way" ref="533157479" role="forward"/>
+    <member type="way" ref="548566221" role="forward"/>
+    <member type="way" ref="529442195" role="forward"/>
+    <member type="way" ref="529442197" role="forward"/>
+    <member type="way" ref="529442199" role="forward"/>
+    <member type="way" ref="529442202" role="forward"/>
+    <member type="way" ref="529442203" role="forward"/>
+    <tag k="network" v="US:AZ"/>
+    <tag k="ref" v="347"/>
+    <tag k="route" v="road"/>
+    <tag k="type" v="route"/>
+  </relation>
+  <relation id="7658956">
+    <member type="way" ref="529995102" role="from"/>
+    <member type="way" ref="529995291" role="via"/>
+    <member type="way" ref="529995168" role="to"/>
+    <tag k="restriction" v="no_u_turn"/>
+    <tag k="type" v="restriction"/>
+  </relation>
+  <relation id="7658957">
+    <member type="way" ref="529995172" role="from"/>
+    <member type="way" ref="529995291" role="via"/>
+    <member type="way" ref="533163353" role="to"/>
+    <tag k="restriction" v="no_u_turn"/>
+    <tag k="type" v="restriction"/>
+  </relation>
+
+</osm>

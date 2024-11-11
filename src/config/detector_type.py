@@ -9,8 +9,8 @@ class DetectorType(Enum):
         SSD (tuple): SSD detector with (id, centroid_radial_error_polynomial, centroid_distance_error_polynomial, bounding_box_error_polynomial, detection_probability_polynomial).
         FASTER_RCNN (tuple): Faster R-CNN detector with (id, centroid_radial_error_polynomial, centroid_distance_error_polynomial, bounding_box_error_polynomial, detection_probability_polynomial).
     """
-    PERFECT = (1, [0.0], [0.0], [0.0], [1.0]) # (id, centroid_radial_error_polynomial, centroid_distance_error_polynomial, bounding_box_error_polynomial, detection_probability_polynomial)
-    YOLO = (2, [0.1, 0.01, 0.001], [0.1, 0.01, 0.001], [0.1, 0.01, 0.001], [0.9, -0.002, 0.0])
+    PERFECT = (1, [0.000001], [0.000001], [0.000001], [.999999]) # (id, centroid_radial_error_polynomial, centroid_distance_error_polynomial, bounding_box_error_polynomial, detection_probability_polynomial)
+    YOLO = (5, [0.009, 0.02], [0.009, 0.02], [0.0009, 0.01], [-0.002, 0.7])
     SSD = (3, [0.2, 0.02, 0.002], [0.2, 0.02, 0.002], [0.2, 0.02, 0.002], [0.8, -0.003, 0.0])
     FASTER_RCNN = (4, [0.3, 0.03, 0.003], [0.3, 0.03, 0.003], [0.3, 0.03, 0.003], [0.7, -0.004, 0.0])
     POINT_PILLARS = (5, [0.0018, 0.02], [0.0018, 0.02], [0.0009, 0.01], [-0.002, 0.9])

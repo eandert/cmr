@@ -104,19 +104,20 @@ class Sensor:
 
 
 class DetectedObject:
-    def __init__(self, vehicle_id, vehicle_type, detected_bbox, centroid, width, length, angle, expected_error_gaussian, velocity_vector=None):
+    def __init__(self, vehicle_id, vehicle_type, detected_bbox, centroid, width, length, angle, expected_error_gaussian, velocity_vector=None, error_covariance=None):
         self.vehicle_id = vehicle_id
         self.type = vehicle_type
         self.detected_bbox = detected_bbox
         self.centroid = centroid
         self.dimensions = [width, length]  # width, length
-        self.rotation = angle
+        self.angle = angle
         self.velocity_vector = velocity_vector
         self.expected_error_gaussian = expected_error_gaussian
+        self.error_covariance = error_covariance
 
     def __str__(self):
         return (f"Type: {self.type}, Detected BBox: {self.detected_bbox}, "
-                f"Dimensions: {self.dimensions}, Rotation: {self.rotation}, "
+                f"Dimensions: {self.dimensions}, Rotation: {self.angle}, "
                 f"Velocity Vector: {self.velocity_vector}")
     
     def draw_bounding_box_in_sumo(self, traci_instance, color=(255, 255, 0, 255), layer=10):
@@ -160,7 +161,7 @@ class DetectedObject:
             layer (int): The layer to draw the polygon on. Higher values are drawn on top of lower values. Defaults to 11.
         """
         cx, cy = self.centroid
-        angle_rad = self.rotation  # Use the stored angle in radians
+        angle_rad = self.angle  # Use the stored angle in radians
         end_x = cx + length * math.cos(angle_rad)
         end_y = cy + length * math.sin(angle_rad)
 
@@ -183,9 +184,10 @@ def create_detected_bounding_boxes(sensor, sensor_pose, ground_truth_objects):
         ground_truth_objects (list): A list of GroundTruthObject instances.
     
     Returns:
-        list: A list of DetectedObject instances.
+        tuple: A tuple containing a list of DetectedObject instances and a list of corresponding ground truth objects.
     """
     detected_objects = []
+    detected_ground_truths = []
     sensor_x, sensor_y, sensor_yaw = sensor_pose
 
     detection_id = 0
@@ -205,6 +207,10 @@ def create_detected_bounding_boxes(sensor, sensor_pose, ground_truth_objects):
             # Calculate the detection probability
             detection_probability = sensor.detection_probability_at_distance(distance)
             probability = random.random()
+
+            # Add to ground truth even if the probability makes it undetected
+            detected_ground_truths.append(gt_obj)
+
             # Use this to determine if the object is detected
             # print(f"Detection Probability: {detection_probability}, Random Probability: {probability}")
             if probability <= detection_probability:
@@ -235,10 +241,10 @@ def create_detected_bounding_boxes(sensor, sensor_pose, ground_truth_objects):
                 
                 # Rotate the bounding box based on the vehicle's angle
                 detected_bbox = [
-                    utils.rotate_point(bbox_x_min, bbox_y_min, new_centroid_x, new_centroid_y, gt_obj.rotation),
-                    utils.rotate_point(bbox_x_max, bbox_y_min, new_centroid_x, new_centroid_y, gt_obj.rotation),
-                    utils.rotate_point(bbox_x_max, bbox_y_max, new_centroid_x, new_centroid_y, gt_obj.rotation),
-                    utils.rotate_point(bbox_x_min, bbox_y_max, new_centroid_x, new_centroid_y, gt_obj.rotation)
+                    utils.rotate_point(bbox_x_min, bbox_y_min, new_centroid_x, new_centroid_y, gt_obj.angle),
+                    utils.rotate_point(bbox_x_max, bbox_y_min, new_centroid_x, new_centroid_y, gt_obj.angle),
+                    utils.rotate_point(bbox_x_max, bbox_y_max, new_centroid_x, new_centroid_y, gt_obj.angle),
+                    utils.rotate_point(bbox_x_min, bbox_y_max, new_centroid_x, new_centroid_y, gt_obj.angle)
                 ]
 
                 detected_objects.append(DetectedObject(
@@ -248,14 +254,14 @@ def create_detected_bounding_boxes(sensor, sensor_pose, ground_truth_objects):
                     centroid=(new_centroid_x, new_centroid_y),
                     width=gt_obj.dimensions[0],
                     length=gt_obj.dimensions[1],
-                    angle=gt_obj.rotation,
+                    angle=gt_obj.angle,
                     expected_error_gaussian=expected_error_gaussian,
                     velocity_vector=gt_obj.velocity_vector
                 ))
 
                 detection_id += 1
 
-    return detected_objects
+    return detected_objects, detected_ground_truths
 
 def calculateErrorGaussian(target_line_angle, radial_error, distal_error):
     # Calculate our expected elipse error bounds

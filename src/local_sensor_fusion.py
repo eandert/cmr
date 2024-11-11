@@ -321,9 +321,9 @@ class FUSION:
         detections_list = []
         for det in observations:
             detections_position_list.append(
-                [det.centroid[0], det.centroid[1], det.dimensions[0], det.dimensions[1], det.rotation])
+                [det.centroid[0], det.centroid[1], det.dimensions[0], det.dimensions[1], det.angle])
             detections_list.append(
-                    [det.vehicle_id, det.centroid[0], det.centroid[1], det.rotation, 0, det.expected_error_gaussian])
+                    [det.vehicle_id, det.centroid[0], det.centroid[1], det.angle, 0, det.expected_error_gaussian])
 
         self.matchDetections(detections_position_list, detections_list, timestamp, cleanupTime, estimate_covariance)
 
@@ -332,7 +332,7 @@ class FUSION:
         if len(detections_list_positions) > 0:
             if len(self.tracked_list) > 0:
                 numpy_formatted = np.array(detections_list_positions).reshape(len(detections_list_positions), 5)
-                thisFrameTrackTree = BallTree(numpy_formatted, metric='euclidean')
+                thisFrameTrackTree = BallTree(numpy_formatted, metric=computeDistanceEuclidean)
 
                 length = len(numpy_formatted)
                 if length > 0:
@@ -413,3 +413,34 @@ class FUSION:
 
         for delete in reversed(remove):
             self.tracked_list.pop(delete)
+
+# This function turns elipses into rectanges so that an IO calculation can be done for 
+# ball tree matching
+def computeDistanceEllipseBox(a, b):
+    cx = a[0]
+    cy = a[1]
+    w = a[2]
+    h = a[3]
+    angle = a[4]
+    c = box(-w/2.0, -h/2.0, w/2.0, h/2.0)
+    rc = rotate(c, angle)
+    contour_a = translate(rc, cx, cy)
+
+    cx = b[0]
+    cy = b[1]
+    w = b[2]
+    h = b[3]
+    angle = a[4]
+    c = box(-w/2.0, -h/2.0, w/2.0, h/2.0)
+    rc = rotate(c, angle)
+    contour_b = translate(rc, cx, cy)
+
+    iou = contour_a.intersection(contour_b).area / contour_a.union(contour_b).area
+
+    # Modify to invert the IOU so that it works with the BallTree class
+    if iou <= 0:
+        distance = 1
+    else:
+        distance = 1 - iou
+
+    return distance

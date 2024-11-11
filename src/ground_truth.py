@@ -8,13 +8,13 @@ class GroundTruthObject:
         self.bbox = bounding_box
         self.dimensions = [width, length]  # width, length
         self.centroid = [position[0], position[1]]  # 2D location
-        self.rotation = angle_rad  # Store angle in radians
+        self.angle = angle_rad  # Store angle in radians
         self.velocity_vector = velocity_vector
 
     def __str__(self):
         return (f"Type: {self.type}, BBox: {self.bbox}, "
                 f"Dimensions: {self.dimensions}, Location: {self.centroid}, "
-                f"Rotation: {math.degrees(self.rotation)}°, Velocity Vector: {self.velocity_vector}")
+                f"Rotation: {math.degrees(self.angle)}°, Velocity Vector: {self.velocity_vector}")
 
     def draw_bounding_box_in_sumo(self, traci_instance, color=(255, 0, 0, 255), layer=10):
         """
@@ -29,13 +29,18 @@ class GroundTruthObject:
         vehicle_id = self.vehicle_id
 
         # Draw the bounding box as a polygon in SUMO
-        traci_instance.polygon.add(
-            polygonID=f"bbox_{vehicle_id}",
-            shape=bbox,
-            color=color,
-            fill=True,
-            layer=layer
-        )
+        try:
+            traci_instance.polygon.add(
+                polygonID=f"bbox_{vehicle_id}",
+                shape=bbox,
+                color=color,
+                fill=True,
+                layer=layer
+            )
+            return True
+        except Exception as e:
+            print(f"Error drawing bounding box for vehicle {vehicle_id}: {e}")
+            return False
 
     def draw_position_vector_in_sumo(self, traci_instance, color=(0, 255, 0, 255), length=5, layer=11):
         """
@@ -48,7 +53,7 @@ class GroundTruthObject:
             layer (int): The layer to draw the polygon on. Higher values are drawn on top of lower values. Defaults to 11.
         """
         cx, cy = self.centroid
-        angle_rad = self.rotation - math.pi / 2  # Adjusting the angle by -90 degrees
+        angle_rad = self.angle - math.pi / 2  # Adjusting the angle by -90 degrees
         end_x = cx + length * math.cos(angle_rad)
         end_y = cy + length * math.sin(angle_rad)
 
@@ -61,7 +66,7 @@ class GroundTruthObject:
             layer=layer
         )
 
-def create_ground_truth_by_id(traci_instance, veh_id):
+def create_ground_truth_for_vehicle_by_id(traci_instance, veh_id):
     """
     Create ground truth data for a single vehicle ID.
     
@@ -113,7 +118,60 @@ def create_ground_truth_by_id(traci_instance, veh_id):
     # Create and return an instance of GroundTruthObject
     return GroundTruthObject(veh_id, vehicle_type, (cx, cy), velocity_vector, bbox_rotated, angle_rad + math.pi, width, length)
 
-def create_ground_truth_from_list(traci_instance, vehicle_ids):
+def create_ground_truth_for_traffic_light_by_id(traci_instance, tl_id):
+    """
+    Create ground truth data for a single traffic light ID.
+    
+    Args:
+        traci_instance: The TraCI instance to use for retrieving traffic light data.
+        tl_id (str): The traffic light ID.
+    
+    Returns:
+        GroundTruthObject: An instance of GroundTruthObject.
+    """
+    # Get the position of the traffic light
+    position = traci_instance.junction.getPosition(tl_id.replace("GS_", "", 1))
+    
+    # Traffic lights do not have speed, angle, length, width, or type
+    speed = 0
+    angle_rad = 0
+    velocity_vector = (0, 0)
+    length = 100
+    width = 100
+    vehicle_type = "traffic_light"
+    
+    # Create an arbitrary bounding box of 100x100
+    cx, cy = position
+    bbox_rotated = [
+        (cx - width / 2, cy - length / 2),
+        (cx + width / 2, cy - length / 2),
+        (cx + width / 2, cy + length / 2),
+        (cx - width / 2, cy + length / 2)
+    ]
+    
+    # Create and return an instance of GroundTruthObject
+    return GroundTruthObject(tl_id, vehicle_type, position, velocity_vector, bbox_rotated, angle_rad, width, length)
+
+def create_ground_truth_for_traffic_light_from_list(traci_instance, traffic_light_ids):
+    """
+    Create ground truth data for the given vehicle IDs.
+    
+    Args:
+        traci_instance: The TraCI instance to use for retrieving vehicle data.
+        vehicle_ids (list): A list of vehicle IDs.
+    
+    Returns:
+        list: A list of GroundTruthObject instances.
+    """
+    ground_truth = []
+
+    # Iterate over each vehicle ID
+    for veh_id in traffic_light_ids:
+        ground_truth.append(create_ground_truth_for_traffic_light_by_id(traci_instance, veh_id))
+
+    return ground_truth
+
+def create_ground_truth_for_vehicle_from_list(traci_instance, vehicle_ids):
     """
     Create ground truth data for the given vehicle IDs.
     
@@ -128,7 +186,7 @@ def create_ground_truth_from_list(traci_instance, vehicle_ids):
 
     # Iterate over each vehicle ID
     for veh_id in vehicle_ids:
-        ground_truth.append(create_ground_truth_by_id(traci_instance, veh_id))
+        ground_truth.append(create_ground_truth_for_vehicle_by_id(traci_instance, veh_id))
 
     return ground_truth
 
