@@ -2,11 +2,12 @@ import traci
 import ground_truth
 import utils
 import sensor
-import sensor_package
+import localizer
 from config import sensor_type, detector_type
-from metrics import minimum_safety_envelope, time_to_collision
+from metrics import metrics, minimum_safety_envelope, time_to_collision, amota
 import time
 import sensor_fusion
+import csv
 
 # Start SUMO in server mode
 sumoBinary = "sumo-gui"  # or "sumo" if you don't need the GUI
@@ -43,6 +44,14 @@ sensors_extrinsics = [
 sensor_package_autoware = [(.5, sensors, sensors_extrinsics),
                   (.5, sensors, sensors_extrinsics)]
 
+# Example localizer
+# Coefficients for the lateral and longitudinal error polynomials
+lateral_error_coefficients = [0.01, 0.001]  # Example coefficients 10cm at 0m/s, 20 cm at 10m/s
+longitudinal_error_coefficients = [0.01, 0.001]  # Example coefficients 10cm at 0m/s, 20 cm at 10m/s
+
+# Instantiate the Localizer class
+lidar_slam = localizer.Localizer(lateral_error_coefficients, longitudinal_error_coefficients)
+
 # Example sensors/detector combos and their extrinsics
 sensors = [
     os1_perfect
@@ -50,7 +59,7 @@ sensors = [
 sensors_extrinsics = [
     (0.0, 0.0, 0.0)
 ]
-sensor_packages_perfect = [(1, sensors, sensors_extrinsics)]
+sensor_packages_perfect = [(1, sensors, sensors_extrinsics, lidar_slam)]
 
 # Initialize VehicleProbabilityManager for CAVs
 cav_manager = utils.VehicleProbabilityManager(probability=0.1, type="CAV", sumo_type="CAV_passenger", sensor_packages=sensor_packages_perfect)
@@ -79,11 +88,40 @@ total_global_fusion_time = 0
 total_random_overhead_time = 0
 iterations = 0
 
+# Metrics accumulation
+total_cav_metrics = {
+    "total_mse_violations_gt": 0,
+    "total_mse_violations_sensor": 0,
+    "total_ttc_violations_gt": 0,
+    "total_ttc_violations_sensor": 0,
+    "true_positives_mse": 0,
+    "false_positives_mse": 0,
+    "false_negatives_mse": 0,
+    "true_positives_ttc": 0,
+    "false_positives_ttc": 0,
+    "false_negatives_ttc": 0,
+    "amota": 0.0
+}
+total_global_metrics = {
+    "total_mse_violations_gt": 0,
+    "total_mse_violations_sensor": 0,
+    "total_ttc_violations_gt": 0,
+    "total_ttc_violations_sensor": 0,
+    "true_positives_mse": 0,
+    "false_positives_mse": 0,
+    "false_negatives_mse": 0,
+    "true_positives_ttc": 0,
+    "false_positives_ttc": 0,
+    "false_negatives_ttc": 0,
+    "amota": 0.0
+}
+total_active_cavs = 0
+
 # Debug variables
 visualize_ground_truth = False
 visualize_cis_detections = False
 visualize_cav_detections = False
-visualize_global_fusion = True
+visualize_global_fusion = False
 do_global_fusion = True
 
 # Simulation loop
@@ -123,6 +161,7 @@ while traci.simulation.getMinExpectedNumber() > 0:
 
     # Get active CAVs and their ground truth objects
     cav_id_list = cav_manager.get_active_vehicle_ids()
+    total_active_cavs += len(cav_id_list)
     
     # Simulation time now
     simulation_time_now = traci.simulation.getTime()
@@ -136,18 +175,18 @@ while traci.simulation.getMinExpectedNumber() > 0:
     for cis_id, cis_instance in zip(cis_id_list, cav_manager.get_active_vehicle_instances()):
         # Get the ground truth object for the CIS
         cis_gt_obj = ground_truth.create_ground_truth_for_traffic_light_by_id(traci, cis_id)
-        fusion_result, viz_result, detectable_ground_truth = cis_instance.create_detection_sets(cis_gt_obj, ground_truth_global, simulation_time_now)
+        fusion_result, detected_objects, detectable_ground_truth = cis_instance.create_detection_sets(cis_gt_obj, ground_truth_global, simulation_time_now)
 
         # Add detectable ground truth objects to the dictionary
         unique_detectable_ground_truth.update(detectable_ground_truth)
 
         if visualize_cis_detections:
-            for each in viz_result:
+            for each in detected_objects:
                 if each.draw_bounding_box_in_sumo(traci, color=(255, 255, 0, 100), layer=9):
                     polygon_ids.append(f"bbox_{each.vehicle_id}")
 
         if do_global_fusion:
-            global_fusion.processDetectionFrame(simulation_time_now, viz_result, .3)
+            global_fusion.processDetectionFrame(simulation_time_now, detected_objects, .3)
     cis_detection_time = time.time() - cis_detection_start_time
     
     # Iterate over all CAVs to get their detection sets -----------------------------------
@@ -165,26 +204,13 @@ while traci.simulation.getMinExpectedNumber() > 0:
                 if each.draw_bounding_box_in_sumo(traci, color=(255, 255, 0, 255), layer=9):
                     polygon_ids.append(f"bbox_{each.vehicle_id}")
 
-        # Calculate ground truth MSE violations for the ego vehicle
-        violations = minimum_safety_envelope.calculate_mse_violations(cav_gt_obj, list(detectable_ground_truth.values()), category="Aggressive")
-        total_mse_violations_gt += violations
-        # print(f"MSE Violations for vehicle {cav_gt_obj.vehicle_id}: {violations}")
-
-        # Calculate sensor based MSE violations for the ego vehicle
-        violations = minimum_safety_envelope.calculate_mse_violations(cav_gt_obj, detected_objects, category="Aggressive")
-        total_mse_violations_sensor += violations
-
-        # Calculate the time to collision for the ego vehicle with gt
-        ttc_violations = time_to_collision.calculate_ttc_violations(cav_gt_obj, list(detectable_ground_truth.values()))
-        total_ttc_violations_gt += ttc_violations
-        # print(f"TTC Violations for vehicle {cav_gt_obj.vehicle_id}: {ttc_violations}")
-
-        # Calculate the time to collision for the ego vehicle with sensor
-        ttc_violations = time_to_collision.calculate_ttc_violations(cav_gt_obj, detected_objects)
-        total_ttc_violations_sensor += ttc_violations
+        # Calculate violations for the CAV
+        cav_metrics = metrics.calculate_violations(cav_gt_obj, detectable_ground_truth, detected_objects, category="Aggressive")
+        for key in total_cav_metrics:
+            total_cav_metrics[key] += cav_metrics[key]
 
         if do_global_fusion:
-            global_fusion.processDetectionFrame(simulation_time_now, viz_result, .3)
+            global_fusion.processDetectionFrame(simulation_time_now, detected_objects, .3)
     cav_detection_time = time.time() - cav_detection_start_time
 
     global_fusion_start_time = time.time()
@@ -198,10 +224,21 @@ while traci.simulation.getMinExpectedNumber() > 0:
         all_detectable_ground_truth = list(unique_detectable_ground_truth.values())
 
         # Calculate AMOTA using unique detectable ground truth
-        amota_score = utils.calculate_amota(global_detection_result, all_detectable_ground_truth)
+        amota_score = amota.calculate_amota(global_detection_result, all_detectable_ground_truth)
         print(f"AMOTA Score: {amota_score:.4f}")
 
-        # TODO(eandert): Use global_detection_result for input to the motion planner
+        # Add the AMOTA score to the global metrics here because we only want it one time
+        total_global_metrics["amota"] += amota_score
+
+        # Calculate violations for the global fusion for each CAV
+        for cav_id in cav_id_list:
+            # Get the ground truth object for the CAV
+            cav_gt_obj = ground_truth.create_ground_truth_for_vehicle_by_id(traci, cav_id)
+            global_metrics = metrics.calculate_violations(cav_gt_obj, unique_detectable_ground_truth, global_detection_result, category="Aggressive", calc_amota=False)
+            for key in total_global_metrics:
+                total_global_metrics[key] += global_metrics[key]
+
+        # TODO: Use global_detection_result for input to the motion planner
 
     global_fusion_time = time.time() - global_fusion_start_time
 
@@ -220,16 +257,43 @@ while traci.simulation.getMinExpectedNumber() > 0:
     print(f"Average Global Fusion Time: {total_global_fusion_time / iterations:.4f} seconds")
     print(f"Average Random Overhead Time: {total_random_overhead_time / iterations:.4f} seconds")
 
-    print(f"Total MSE Violations Ground Truth: {total_mse_violations_gt}")
-    print(f"Total MSE Violations Onboard Sensing: {total_mse_violations_sensor}")
-    print(f"Total TTC Violations Ground Truth: {total_ttc_violations_gt}")
-    print(f"Total TTC Violations Onboard Sensing: {total_ttc_violations_sensor}")
+    print(f"Total MSE Violations Ground Truth: {total_cav_metrics['total_mse_violations_gt']}")
+    print(f"Total MSE Violations Onboard Sensing: {total_cav_metrics['total_mse_violations_sensor']}")
+    print(f"Total TTC Violations Ground Truth: {total_cav_metrics['total_ttc_violations_gt']}")
+    print(f"Total TTC Violations Onboard Sensing: {total_cav_metrics['total_ttc_violations_sensor']}")
+    print(f"Total True Positives MSE: {total_cav_metrics['true_positives_mse']}")
+    print(f"Total False Positives MSE: {total_cav_metrics['false_positives_mse']}")
+    print(f"Total False Negatives MSE: {total_cav_metrics['false_negatives_mse']}")
+    print(f"Total True Positives TTC: {total_cav_metrics['true_positives_ttc']}")
+    print(f"Total False Positives TTC: {total_cav_metrics['false_positives_ttc']}")
+    print(f"Total False Negatives TTC: {total_cav_metrics['false_negatives_ttc']}")
+    print(f"Total AMOTA: {total_cav_metrics['amota']}")
     
     step += 1
 
-print(f"Total MSE Violations GT: {total_mse_violations_gt}")
-print(f"Total MSE Violations Sensor: {total_mse_violations_sensor}")
-print(f"Total TTC Violations: {total_ttc_violations_gt}")
-print(f"Total TTC Violations Sensor: {total_ttc_violations_sensor}")
+# Write the totals to a CSV file
+with open('metrics_totals.csv', 'w', newline='') as csvfile:
+    fieldnames = ['Metric', 'Total']
+    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+    writer.writeheader()
+    writer.writerow({'Metric': 'Total Steps', 'Total': iterations})
+    writer.writerow({'Metric': 'Total Active CAVs', 'Total': total_active_cavs})
+    for key, value in total_cav_metrics.items():
+        writer.writerow({'Metric': f'CAV {key}', 'Total': value})
+    for key, value in total_global_metrics.items():
+        writer.writerow({'Metric': f'Global {key}', 'Total': value})
+
+print(f"Total MSE Violations Ground Truth: {total_cav_metrics['total_mse_violations_gt']}")
+print(f"Total MSE Violations Onboard Sensing: {total_cav_metrics['total_mse_violations_sensor']}")
+print(f"Total TTC Violations Ground Truth: {total_cav_metrics['total_ttc_violations_gt']}")
+print(f"Total TTC Violations Onboard Sensing: {total_cav_metrics['total_ttc_violations_sensor']}")
+print(f"Total True Positives MSE: {total_cav_metrics['true_positives_mse']}")
+print(f"Total False Positives MSE: {total_cav_metrics['false_positives_mse']}")
+print(f"Total False Negatives MSE: {total_cav_metrics['false_negatives_mse']}")
+print(f"Total True Positives TTC: {total_cav_metrics['true_positives_ttc']}")
+print(f"Total False Positives TTC: {total_cav_metrics['false_positives_ttc']}")
+print(f"Total False Negatives TTC: {total_cav_metrics['false_negatives_ttc']}")
+print(f"Total AMOTA: {total_cav_metrics['amota']}")
 
 traci.close()

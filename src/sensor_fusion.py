@@ -552,7 +552,7 @@ class Fusion:
                     cooperative_monitoring.append(track.error_monitor)
                     trupercept_monitoring.append(track.trupercept_list)
 
-                print("Track ID: ", track.id, "X: ", track.x, "Y: ", track.y, "DX: ", track.dx, "DY: ", track.dy)
+                # print("Track ID: ", track.id, "X: ", track.x, "Y: ", track.y, "DX: ", track.dx, "DY: ", track.dy)
                 
                 # Create a DetectedObject instance and append to the list
                 angle = track.angle  # Use the averaged angle

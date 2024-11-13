@@ -1,8 +1,8 @@
 import math
-import ground_truth
-import sensor
-import sensor_fusion
 import utils
+import sensor
+import ground_truth
+import sensor_fusion
 
 class SensorPackage:
     """
@@ -15,16 +15,18 @@ class SensorPackage:
         sensors_extrinsics (list): A list of extrinsic parameters for each sensor.
         sensor_detection_sets (list): A list of detection sets for each sensor.
         detection_set_timestamp (float): The timestamp of the detection set.
+        localizer (Localizer): The localizer object for the SensorPackage.
     """
     
-    def __init__(self, sensor_package_id, sensors, sensors_extrinsics):
+    def __init__(self, sensor_package_id, sensors, sensors_extrinsics, localizer, error_package = None):
         """
-        Initialize the SensorPackage with its ID, sensors, and sensors' extrinsics.
+        Initialize the SensorPackage with its ID, sensors, sensors' extrinsics, and localizer.
         
         Args:
             sensor_package_id (str): The ID of the SensorPackage.
             sensors (list): A list of sensor objects for the SensorPackage.
             sensors_extrinsics (list): A list of extrinsic parameters for each sensor.
+            localizer (Localizer): The localizer object for the SensorPackage.
         """
         self.sensor_package_id = sensor_package_id
         self.ground_truth_obj = None
@@ -34,6 +36,7 @@ class SensorPackage:
         self.detection_set_timestamp = None
         self.integer_id = utils.extract_id(sensor_package_id)
         self.sensor_fusion = sensor_fusion.Fusion(self.integer_id)
+        self.localizer = localizer
 
     def set_sensor_poses(self):
         """
@@ -67,6 +70,20 @@ class SensorPackage:
             time (float): The timestamp of the detection set.
         """
         self.ground_truth_obj = ego_ground_truth
+
+        # Get the velocity of the ego vehicle
+        velocity = math.sqrt(ego_ground_truth.velocity_vector[0]**2 + ego_ground_truth.velocity_vector[1]**2)
+
+        # Calculate the lateral and longitudinal errors
+        lateral_error = self.localizer.lateral_error_at_velocity(velocity)
+        longitudinal_error = self.localizer.longitudinal_error_at_velocity(velocity)
+
+        # Adjust the position of the ego vehicle based on the errors and its angle
+        adjusted_x = ego_ground_truth.centroid[0] + longitudinal_error * math.cos(ego_ground_truth.angle) - lateral_error * math.sin(ego_ground_truth.angle)
+        adjusted_y = ego_ground_truth.centroid[1] + longitudinal_error * math.sin(ego_ground_truth.angle) + lateral_error * math.cos(ego_ground_truth.angle)
+
+        # Update the ego vehicle's position
+        self.ground_truth_obj.centroid = [adjusted_x, adjusted_y]
 
         sensor_poses = self.set_sensor_poses()
 
