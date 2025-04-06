@@ -13,7 +13,7 @@ import csv
 sumoBinary = "sumo-gui"  # or "sumo" if you don't need the GUI
 sumoCmd = [
     sumoBinary,
-    "-c", "C:/Users/rylens/cmr/maps/single/osm.sumocfg",
+    "-c", "C:/home/rylens/cmr/maps/single/osm.sumocfg",
     "--step-length", "0.1"  # Set the step size to 0.1 seconds
 ]
 traci.start(sumoCmd)
