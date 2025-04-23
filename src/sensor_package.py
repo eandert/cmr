@@ -38,7 +38,9 @@ class SensorPackage:
         self.sensor_fusion = sensor_fusion.Fusion(self.integer_id)
         self.localizer = localizer
         self.error = error_package
-
+        self.roll1 = random.random()
+        self.roll2 = random.random()
+        
     def set_sensor_poses(self):
         """
         Set the sensor poses for the SensorPackage based on the SensorPackage's pose and the sensors' extrinsics.
@@ -59,34 +61,15 @@ class SensorPackage:
             sensor_y = cav_y + sensor_x_rel * math.sin(cav_yaw) + sensor_y_rel * math.cos(cav_yaw)
             sensor_yaw = cav_yaw + sensor_yaw_rel
 
-            # Perform several dice rolls to determine if sensors have extrinsic errors, if multiple do, and how severe
-            roll1 = random.random()
-            roll2 = random.random()
-            roll3 = random.random()
-            if roll1 < 0.2 and self.error.error_type == "Single sensor extrinsics":
-                if roll2 < 0.33:
-                    sensor_x = sensor_x * random.uniform(0.95, 1.05)
-                elif 0.33 < roll2 < 0.66:
-                    sensor_y = sensor_y * random.uniform(0.95, 1.05)
-                else 
-                    error_yaw = sensor_yaw * random.uniform(0.95, 1.05)
-            elif roll1 < 0.2 and self.error.error_type == "Multi sensor extrinsics":
-                if roll2 < 0.33:
-                    if roll3 > 0.5:
-                        sensor_y = sensor_y * random.uniform(0.95, 1.05)
-                    else:
-                        error_yaw = sensor_yaw * random.uniform(0.95, 1.05)
-                elif 0.33 < roll2 < 0.66:
-                    roll2 < 0.33:
-                    if roll3 > 0.5:
-                        sensor_x = sensor_y * random.uniform(0.95, 1.05)
-                    else
-                        error_yaw = sensor_yaw * random.uniform(0.95, 1.05)        
-                else:
-                    if roll3 > 0.5:
-                        sensor_x = sensor_y * random.uniform(0.95, 1.05)
-                    else:
-                        error_y = sensor_yaw * random.uniform(0.95, 1.05)
+            # Perform several dice rolls to determine if sensors have extrinsic errors, if multiple do, and how severe           
+            if self.roll1 < 0.2 and self.error.error_type == "Single sensor extrinsics":
+                if self.roll2 < 0.5:
+                    sensor_x = sensor_x + numpy.random.normal(0, 0.1,1)[0]
+                else: 
+                    sensor_y = sensor_yaw + numpy.random.normal(0, 0.1,1)[0]
+            elif self.roll1 < 0.2 and self.error.error_type == "Multi sensor extrinsics":
+                sensor_y = sensor_y + numpy.random.normal(0, 0.1,1)[0]
+                sensor_x = sensor_x + numpy.random.normal(0, 0.1,1)[0]
             
             sensor_poses.append((sensor_x, sensor_y, sensor_yaw))
 
