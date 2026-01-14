@@ -150,6 +150,9 @@ while traci.simulation.getMinExpectedNumber() > 0:
 
     # Create ground truth data for all vehicles
     ground_truth_global = ground_truth.create_ground_truth_for_vehicle_from_list(traci, vehicle_ids)
+    
+    # Build spatial index for fast range queries (optimization #2)
+    ground_truth_spatial_index, _ = ground_truth.build_ground_truth_spatial_index(ground_truth_global)
 
     # Draw the bounding boxes in SUMO for debugging
     if visualize_ground_truth:
@@ -175,7 +178,7 @@ while traci.simulation.getMinExpectedNumber() > 0:
     for cis_id, cis_instance in zip(cis_id_list, cav_manager.get_active_vehicle_instances()):
         # Get the ground truth object for the CIS
         cis_gt_obj = ground_truth.create_ground_truth_for_traffic_light_by_id(traci, cis_id)
-        fusion_result, detected_objects, detectable_ground_truth = cis_instance.create_detection_sets(cis_gt_obj, ground_truth_global, simulation_time_now)
+        fusion_result, detected_objects, detectable_ground_truth = cis_instance.create_detection_sets(cis_gt_obj, ground_truth_global, ground_truth_spatial_index, simulation_time_now)
 
         # Add detectable ground truth objects to the dictionary
         unique_detectable_ground_truth.update(detectable_ground_truth)
@@ -194,7 +197,7 @@ while traci.simulation.getMinExpectedNumber() > 0:
     for cav_id, cav_instance in zip(cav_id_list, cav_manager.get_active_vehicle_instances()):
         # Get the ground truth object for the CAV
         cav_gt_obj = ground_truth.create_ground_truth_for_vehicle_by_id(traci, cav_id)
-        fusion_result, detected_objects, detectable_ground_truth = cav_instance.create_detection_sets(cav_gt_obj, ground_truth_global, simulation_time_now)
+        fusion_result, detected_objects, detectable_ground_truth = cav_instance.create_detection_sets(cav_gt_obj, ground_truth_global, ground_truth_spatial_index, simulation_time_now)
 
         # Add detectable ground truth objects to the dictionary
         unique_detectable_ground_truth.update(detectable_ground_truth)

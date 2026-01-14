@@ -6,13 +6,14 @@ import numpy as np
 from shapely.geometry import Polygon
 from shapely.geometry import box, Point
 from shapely.affinity import rotate, translate
+from error import ErrorPackage, ErrorType
 
 class VehicleProbabilityManager:
     """
     Manages the probability of vehicles being classified as a specific type (e.g., CAV).
     """
 
-    def __init__(self, probability, type, sumo_type, sensor_packages=None):
+    def __init__(self, probability, type, sumo_type, sensor_packages=None, error_package=None):
         """
         Initializes the VehicleProbabilityManager.
 
@@ -21,6 +22,7 @@ class VehicleProbabilityManager:
             type (str): The type of vehicle (e.g., "CAV").
             sumo_type (str): The SUMO vehicle type to set (e.g., "CAV_passenger").
             sensor_packages (list): A list of tuples containing the probability, sensors, and sensors' extrinsics.
+            error_package (ErrorPackage): The error package to apply errors.
         """
         self.probability = probability
         self.vehicle_list = []
@@ -30,6 +32,7 @@ class VehicleProbabilityManager:
         self.sumo_type = sumo_type
         self.vehicle_instances = {}
         self.sensor_packages = sensor_packages if sensor_packages else []
+        self.error_package = error_package
 
     def update_vehicles(self, traci_instance, vehicle_id_list):
         """
@@ -55,7 +58,7 @@ class VehicleProbabilityManager:
                     if self.sensor_packages:
                         sp = self.select_sensor_package()
                         # print(f"Selected sensor package for {vehicle_id}: {sensor_package}")
-                        self.vehicle_instances[vehicle_id] = sensor_package.SensorPackage(vehicle_id, sp[0], sp[1], sp[2])
+                        self.vehicle_instances[vehicle_id] = sensor_package.SensorPackage(vehicle_id, sp[0], sp[1], sp[2], self.error_package)
                 except Exception as e:
                     print(f"ERROR: Couldn't add {self.type}: ", e)
 
@@ -78,18 +81,33 @@ class VehicleProbabilityManager:
         Selects a sensor package based on the distribution within the sensor_packages tuple.
 
         Returns:
-            tuple: The selected sensor package (sensors, sensors_extrinsics).
+            tuple: The selected sensor package (sensors, sensors_extrinsics, localizer).
         """
         total_probability = sum(package[0] for package in self.sensor_packages)
         randomnum = random.uniform(0, total_probability)
         cumulative_probability = 0.0
 
-        for probability, sensors, sensors_extrinsics, loclizer in self.sensor_packages:
+        for probability, sensors, sensors_extrinsics, localizer_instance in self.sensor_packages:
             cumulative_probability += probability
             if randomnum <= cumulative_probability:
-                return sensors, sensors_extrinsics, loclizer
+                # Pass the error_package to the Localizer constructor if needed
+                if hasattr(localizer_instance, '__init__') and 'error_package' in localizer_instance.__init__.__code__.co_varnames:
+                    # Create a new Localizer instance with the error_package
+                    localizer_instance = localizer_instance.__class__(
+                        localizer_instance.lateral_error_polynomial.coefficients, 
+                        localizer_instance.longitudinal_error_polynomial.coefficients, 
+                        self.error_package)
+                return sensors, sensors_extrinsics, localizer_instance
 
-        return self.sensor_packages[-1][1], self.sensor_packages[-1][2]  # Fallback to the last package
+        # Fallback to the last package, ensuring error_package is passed to Localizer if applicable
+        last_package = self.sensor_packages[-1]
+        sensors, sensors_extrinsics, localizer_instance = last_package[1], last_package[2], last_package[3]
+        if hasattr(localizer_instance, '__init__') and 'error_package' in localizer_instance.__init__.__code__.co_varnames:
+            localizer_instance = localizer_instance.__class__(
+                localizer_instance.lateral_error_polynomial.coefficients, 
+                localizer_instance.longitudinal_error_polynomial.coefficients, 
+                self.error_package)
+        return sensors, sensors_extrinsics, localizer_instance
 
     def get_active_vehicle_ids(self):
         """
@@ -114,13 +132,14 @@ class TrafficLightProbabilityManager:
     Manages the probability of traffic lights being outfitted with cameras.
     """
 
-    def __init__(self, probability, traci_instance, sensor_packages=None):
+    def __init__(self, probability, traci_instance, sensor_packages=None, error_package=None):
         """
         Initializes the TrafficLightProbabilityManager.
 
         Args:
             probability (float): The probability of a traffic light being outfitted with an RSU.
             sensor_packages (list): A list of tuples containing the probability, sensors, and sensors' extrinsics.
+            error_package (ErrorPackage): The error package to apply errors.
         """
         self.probability = probability
         self.tracked_tfls = {}
@@ -128,6 +147,7 @@ class TrafficLightProbabilityManager:
         self.tracked_tfl_total_possible = 0
         self.sensor_packages = sensor_packages if sensor_packages else []
         self.position = None
+        self.error_package = error_package
 
         # Initialize the traffic lights once
         self.initialize_traffic_lights(traci_instance)
@@ -147,7 +167,7 @@ class TrafficLightProbabilityManager:
                     self.position = traci_instance.junction.getPosition(light.replace("GS_", "", 1))
                     if self.sensor_packages:
                         sp = self.select_sensor_package()
-                        self.tracked_tfls[light] = sensor_package.SensorPackage(light, sp[0], sp[1], sp[2])
+                        self.tracked_tfls[light] = sensor_package.SensorPackage(light, sp[0], sp[1], sp[2], self.error_package)
                     else:
                         self.tracked_tfls[light] = None
                     self.tracked_tfl_total += 1
@@ -157,18 +177,32 @@ class TrafficLightProbabilityManager:
         Selects a sensor package based on the distribution within the sensor_packages tuple.
 
         Returns:
-            tuple: The selected sensor package (sensors, sensors_extrinsics).
+            tuple: The selected sensor package (sensors, sensors_extrinsics, localizer).
         """
         total_probability = sum(package[0] for package in self.sensor_packages)
         randomnum = random.uniform(0, total_probability)
         cumulative_probability = 0.0
 
-        for probability, sensors, sensors_extrinsics, loclizer in self.sensor_packages:
+        for probability, sensors, sensors_extrinsics, localizer_instance in self.sensor_packages:
             cumulative_probability += probability
             if randomnum <= cumulative_probability:
-                return sensors, sensors_extrinsics, loclizer
+                # Pass the error_package to the Localizer constructor if needed
+                if hasattr(localizer_instance, '__init__') and 'error_package' in localizer_instance.__init__.__code__.co_varnames:
+                    localizer_instance = localizer_instance.__class__(
+                        localizer_instance.lateral_error_polynomial.coefficients, 
+                        localizer_instance.longitudinal_error_polynomial.coefficients, 
+                        self.error_package)
+                return sensors, sensors_extrinsics, localizer_instance
 
-        return None, None  # Fallback to None as we may not have a sensor package, e.g. just a fusion position
+        # Fallback to the last package, ensuring error_package is passed to Localizer if applicable
+        last_package = self.sensor_packages[-1]
+        sensors, sensors_extrinsics, localizer_instance = last_package[1], last_package[2], last_package[3]
+        if hasattr(localizer_instance, '__init__') and 'error_package' in localizer_instance.__init__.__code__.co_varnames:
+            localizer_instance = localizer_instance.__class__(
+                localizer_instance.lateral_error_polynomial.coefficients, 
+                localizer_instance.longitudinal_error_polynomial.coefficients, 
+                self.error_package)
+        return sensors, sensors_extrinsics, localizer_instance
 
     def get_tracked_traffic_light_ids(self):
         """

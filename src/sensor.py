@@ -5,6 +5,7 @@ import numpy as np
 # Project specific imports
 import utils
 import gaussians
+from config.detector_type import DetectorType
 
 class Sensor:
     """
@@ -39,7 +40,15 @@ class Sensor:
         self.centroid_distance_error_polynomial = utils.Polynomial(detector_type.centroid_distance_error_polynomial)
         self.bounding_box_error_polynomial = utils.Polynomial(detector_type.bounding_box_error_polynomial)
         self.detection_probability_polynomial = utils.Polynomial(detector_type.detection_probability_polynomial)
-        
+        # Initialize sensor's original extrinsics relative to the SensorPackage
+        self.x_extrinsics_original = 0.0
+        self.y_extrinsics_original = 0.0
+        self.angle_extrinsics_original = 0.0
+        # Initialize sensor's extrinsics error offsets
+        self.x_offset_error = 0.0
+        self.y_offset_error = 0.0
+        self.angle_offset_error = 0.0
+
     def check_in_range_and_fov(self, target_angle, distance):
         """
         Check if a target is within the sensor's range and field of view.
@@ -115,12 +124,34 @@ class DetectedObject:
         self.expected_error_gaussian = expected_error_gaussian
         self.error_covariance = error_covariance
 
+    @property
+    def detected_bbox_corners(self):
+        angle = self.angle
+        half_width = self.dimensions[0] / 2
+        half_length = self.dimensions[1] / 2
+
+        # Calculate the corners of the bounding box
+        cos_angle = math.cos(angle)
+        sin_angle = math.sin(angle)
+
+        # Center of the bounding box
+        cx, cy = self.centroid
+
+        # Calculate the four corners of the bounding box
+        bbox = [
+            (cx - half_width * cos_angle - half_length * sin_angle, cy - half_width * sin_angle + half_length * cos_angle),
+            (cx + half_width * cos_angle - half_length * sin_angle, cy + half_width * sin_angle + half_length * cos_angle),
+            (cx + half_width * cos_angle + half_length * sin_angle, cy + half_width * sin_angle - half_length * cos_angle),
+            (cx - half_width * cos_angle + half_length * sin_angle, cy - half_width * sin_angle - half_length * cos_angle)
+        ]
+        return bbox
+
     def __str__(self):
         return (f"Type: {self.type}, Detected BBox: {self.detected_bbox}, "
                 f"Dimensions: {self.dimensions}, Rotation: {self.angle}, "
                 f"Velocity Vector: {self.velocity_vector}")
     
-    def draw_bounding_box_in_sumo(self, traci_instance, color=(255, 255, 0, 255), layer=10):
+    def draw_bounding_box_in_sumo(self, traci_instance, color=(255, 255, 0, 255), layer=10, sensor_package_id="global"):
         """
         Draw the bounding box of this detected object in SUMO.
         
@@ -128,6 +159,7 @@ class DetectedObject:
             traci_instance: The TraCI instance to use for drawing.
             color (tuple): The color of the bounding box in RGBA format. Defaults to yellow.
             layer (int): The layer to draw the polygon on. Higher values are drawn on top of lower values. Defaults to 7.
+            sensor_package_id (str): The ID of the sensor package that detected this object. Used to create unique polygon IDs.
         """
         bbox = self.detected_bbox
         vehicle_id = self.vehicle_id
@@ -138,19 +170,20 @@ class DetectedObject:
 
         # Draw the bounding box as a polygon in SUMO
         try:
+            polygon_unique_id = f"bbox_{sensor_package_id}_{vehicle_id}"
             traci_instance.polygon.add(
-                polygonID=f"bbox_{vehicle_id}",
+                polygonID=polygon_unique_id,
                 shape=bbox,
                 color=color,
                 fill=True,
                 layer=layer
             )
-            return True
+            return polygon_unique_id
         except Exception as e:
             print(f"Error drawing bounding box for vehicle {vehicle_id}: {e}")
-            return False
+            return None
 
-    def draw_position_vector_in_sumo(self, traci_instance, color=(0, 255, 255, 255), length=11, layer=8):
+    def draw_position_vector_in_sumo(self, traci_instance, color=(0, 255, 255, 255), length=11, layer=8, polygon_id_prefix=""):
         """
         Draw the position vector from the centroid and angle of the bounding box in SUMO.
         
@@ -159,6 +192,7 @@ class DetectedObject:
             color (tuple): The color of the position vector in RGBA format. Defaults to green.
             length (float): The length of the position vector. Defaults to 5.
             layer (int): The layer to draw the polygon on. Higher values are drawn on top of lower values. Defaults to 11.
+            polygon_id_prefix (str): Prefix to make the polygon ID unique across different types of visualizations.
         """
         cx, cy = self.centroid
         angle_rad = self.angle  # Use the stored angle in radians
@@ -166,33 +200,43 @@ class DetectedObject:
         end_y = cy + length * math.sin(angle_rad)
 
         # Draw the position vector as a thin polygon in SUMO
+        polygon_vector_id = f"vector_{polygon_id_prefix}_{self.vehicle_id}"
         traci_instance.polygon.add(
-            polygonID=f"vector_{self.vehicle_id}",
+            polygonID=polygon_vector_id,
             shape=[(cx, cy), (end_x, end_y)],
             color=color,
             fill=False,
             layer=layer
         )
+        return polygon_vector_id # Return the ID for management
 
-def create_detected_bounding_boxes(sensor, sensor_pose, ground_truth_objects):
+def create_detected_bounding_boxes(sensor, sensor_pose, ground_truth_objects, sensor_package_id):
     """
     Create a set of detected bounding boxes based on the sensor properties and ground truth objects.
     
     Args:
         sensor (Sensor): The sensor object.
-        sensor_pose (tuple): The sensor pose as (x, y, yaw).
+        sensor_pose (tuple): The sensor's absolute pose as (x, y, yaw) after applying extrinsics and any errors.
         ground_truth_objects (list): A list of GroundTruthObject instances.
+        sensor_package_id (str): The ID of the sensor package.
     
     Returns:
         tuple: A tuple containing a list of DetectedObject instances and a list of corresponding ground truth objects.
     """
     detected_objects = []
     detected_ground_truths = []
-    sensor_x, sensor_y, sensor_yaw = sensor_pose
+    # The sensor_pose already incorporates original extrinsics and any errors
+    sensor_x = sensor_pose[0]
+    sensor_y = sensor_pose[1]
+    sensor_yaw = sensor_pose[2]
 
     detection_id = 0
 
     for gt_obj in ground_truth_objects:
+        # Explicitly skip the ego vehicle itself
+        if gt_obj.vehicle_id == sensor_package_id:
+            continue
+
         # Calculate the relative position of the ground truth object to the sensor
         dx = gt_obj.centroid[0] - sensor_x
         dy = gt_obj.centroid[1] - sensor_y
@@ -208,26 +252,30 @@ def create_detected_bounding_boxes(sensor, sensor_pose, ground_truth_objects):
             detection_probability = sensor.detection_probability_at_distance(distance)
             probability = random.random()
 
-            # Add to ground truth even if the probability makes it undetected
-            detected_ground_truths.append(gt_obj)
-
             # Use this to determine if the object is detected
-            # print(f"Detection Probability: {detection_probability}, Random Probability: {probability}")
             if probability <= detection_probability:
-                # print(f"Object Detected: {gt_obj.vehicle_id}")
-                # Calculate the detected bounding box with errors
-                radial_error = sensor.centroid_radial_error_at_distance(distance)
-                distance_error = sensor.centroid_distance_error_at_distance(distance)
-                bbox_error = sensor.bounding_box_error_at_distance(distance)
+                detected_ground_truths.append(gt_obj) # Only add to detected_ground_truths if actually detected
 
-                expected_error_gaussian, actual_error = calculateErrorGaussian(angle_to_obj, radial_error, distance_error)
+                # If it's a PERFECT detector, set errors to zero
+                if sensor.detector_type_id == DetectorType.PERFECT:
+                    actual_error = (0.0, 0.0)
+                    width_error = 0.0
+                    length_error = 0.0
+                    expected_error_gaussian = gaussians.BivariateGaussian(0.000001, 0.000001, angle_to_obj) # Near zero covariance
+                else:
+                    # Calculate the detected bounding box with errors
+                    radial_error = sensor.centroid_radial_error_at_distance(distance)
+                    distance_error = sensor.centroid_distance_error_at_distance(distance)
+                    bbox_error = sensor.bounding_box_error_at_distance(distance)
+
+                    expected_error_gaussian, actual_error = calculateErrorGaussian(angle_to_obj, radial_error, distance_error)
+
+                    # Calculate the new bounding box error
+                    width_error, length_error = calculateBBoxError(bbox_error)
 
                 # Move the centroid using the actual error
                 new_centroid_x = gt_obj.centroid[0] + actual_error[0]
                 new_centroid_y = gt_obj.centroid[1] + actual_error[1]
-
-                # Calculate the new bounding box error
-                width_error, length_error = calculateBBoxError(bbox_error)
 
                 # Calculate the size of the bounding box in ± width and ± length
                 width = (gt_obj.dimensions[0] + width_error) / 2
@@ -256,7 +304,8 @@ def create_detected_bounding_boxes(sensor, sensor_pose, ground_truth_objects):
                     length=gt_obj.dimensions[1],
                     angle=gt_obj.angle,
                     expected_error_gaussian=expected_error_gaussian,
-                    velocity_vector=gt_obj.velocity_vector
+                    velocity_vector=gt_obj.velocity_vector,
+                    error_covariance=expected_error_gaussian.covariance
                 ))
 
                 detection_id += 1

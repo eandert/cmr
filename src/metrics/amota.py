@@ -25,7 +25,8 @@ def calculate_amota(detected_objects, ground_truth_objects, iou_threshold=0.5):
     # Example: Count matches based on some criteria (e.g., IoU threshold)
     for det in detected_objects:
         for i, gt in enumerate(ground_truth_objects):
-            if not matched_gt[i] and iou(gt.bbox, det.detected_bbox) > iou_threshold:
+            _iou_value = iou(gt.bbox, det.detected_bbox)
+            if not matched_gt[i] and _iou_value > iou_threshold:
                 total_matches += 1
                 matched_gt[i] = True
                 break
@@ -35,7 +36,7 @@ def calculate_amota(detected_objects, ground_truth_objects, iou_threshold=0.5):
     recall = total_matches / total_ground_truth
 
     # Calculate AMOTA score
-    amota = (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+    amota = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
     
     return amota
 

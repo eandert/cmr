@@ -55,16 +55,17 @@ class ResizableKalman:
         self.min_size = .5
 
         # Process varaition guess
-        process_variation = .16
+        process_variation = .9 # Increased from .7
 
         # Track the time of the last track
         self.last_measurement = time
+        self.last_update = time # Initialize last_update here
 
         # Track the number of times this Kalman filter has been used
         self.idx = 0
 
         # The amount of time before a tracker is removed from the list
-        self.time_until_removal = .5
+        self.time_until_removal = .3
 
         # Store the fusion mode
         self.fusion_mode = fusion_mode
@@ -72,16 +73,29 @@ class ResizableKalman:
         # Trupercept stuff
         self.trupercept_list = []
 
-        process_noise_estimate = .125
+        process_noise_estimate = .7 # Increased from .5
 
         # Set up the Kalman filter
         # Initial State cov
         if self.fusion_mode == 0:
             # Set up the Kalman filter
             self.F_t_len = 4
+        elif self.fusion_mode == 1:
+            # Setup for x_hat = x + dx + dxdx,  y_hat = y + dy + dydy
+            self.F_t_len = 6
+        else:
+            # model from https://journals.sagepub.com/doi/abs/10.1177/0959651820975523
+            self.F_t_len = 5
+
+        # Initialize Kalman state and covariance with placeholders of correct dimensions
+        # These will be properly set during the first fusion call (self.idx == 0)
+        self.X_hat_t = np.zeros((self.F_t_len, 1), dtype='float')
+        self.P_hat_t = np.identity(self.F_t_len)
+
+        # Now apply mode-specific initializations
+        if self.fusion_mode == 0:
             # Setup for x_hat = x + dx,  y_hat = y + dy
             # Initial State cov
-            self.P_hat_t = np.identity(4)
             self.P_hat_t[2][2] = 0.0
             self.P_hat_t[3][3] = 0.0
             # Process cov
@@ -94,13 +108,11 @@ class ResizableKalman:
                                 [two, 0, process_variation, 0],
                                 [0, two, 0, process_variation]], dtype='float')
             # Control matrix
-            self.B_t = np.array([[0], [0], [0], [0]], dtype='float')
+            self.B_t = np.array([[0]] * self.F_t_len, dtype='float') # Adjusted dimensions based on F_t_len
             # Control vector
             self.U_t = 0
         elif self.fusion_mode == 1:
             # Setup for x_hat = x + dx + dxdx,  y_hat = y + dy + dydy
-            self.F_t_len = 6
-            self.P_hat_t = np.identity(6)
             self.P_hat_t[2][2] = 0.0
             self.P_hat_t[3][3] = 0.0
             self.P_hat_t[4][4] = 0.0
@@ -117,13 +129,11 @@ class ResizableKalman:
                                 [0, 0, three, 0, two, 0],
                                 [0, 0, 0, three, 0, two]], dtype='float')
             # Control matrix
-            self.B_t = np.array([[0], [0], [0], [0], [0], [0]], dtype='float')
+            self.B_t = np.array([[0]] * self.F_t_len, dtype='float') # Adjusted dimensions based on F_t_len
             # Control vector
             self.U_t = 0
         else:
             # model from https://journals.sagepub.com/doi/abs/10.1177/0959651820975523
-            self.F_t_len = 5
-            self.P_hat_t = np.identity(5)
             self.P_hat_t[2][2] = 0.0
             self.P_hat_t[3][3] = 0.0
             self.P_hat_t[4][4] = 0.0
@@ -138,7 +148,7 @@ class ResizableKalman:
                                 [0, 0, 0, two, 0],
                                 [0, 0, 0, 0, two]], dtype='float')
             # Control matrix
-            self.B_t = np.array([[0], [0], [0], [0], [0]], dtype='float')
+            self.B_t = np.array([[0]] * self.F_t_len, dtype='float') # Adjusted dimensions based on F_t_len
             # Control vector
             self.U_t = 0
 
@@ -401,16 +411,53 @@ class ResizableKalman:
             #     print ( " Exception: " + str(e) )
 
     def getKalmanPred(self, time):
-        # Prediction based mathcing methods seems to be making this fail so we are using no prediction :/
-        # Enforce a min size of a vehicle so that a detection has some area overlap to check
-        a, b, phi = utils.ellipsify(self.error_covariance, 1.0)
-        return self.x, self.y, a, b, phi
+        # Use the current Kalman state to predict the position at the given time
+        elapsed = time - self.last_update
+        if elapsed < 0:
+            # If the requested time is before the last update, return the last updated position
+            # Or handle as an error/special case, for now, just return current state
+            predicted_x = self.X_hat_t[0][0]
+            predicted_y = self.X_hat_t[1][0]
+            predicted_P = self.P_hat_t
+        else:
+            # Predict the state forward
+            if self.fusion_mode == 0:
+                F_pred = np.array([[1, 0, elapsed, 0],
+                                   [0, 1, 0, elapsed],
+                                   [0, 0, 1, 0],
+                                   [0, 0, 0, 1]], dtype='float')
+            elif self.fusion_mode == 1:
+                F_pred = np.array([[1, 0, elapsed, 0, elapsed*elapsed, 0],
+                                   [0, 1, 0, elapsed, 0, elapsed*elapsed],
+                                   [0, 0, 1, 0, elapsed, 0],
+                                   [0, 0, 0, 1, 0, elapsed],
+                                   [0, 0, 0, 0, 1, 0],
+                                   [0, 0, 0, 0, 0, 1]], dtype='float')
+            else:
+                # For fusion mode 2, the F_t is more complex and depends on current state
+                # For simplicity here, we'll use a basic prediction, or if detailed prediction is needed,
+                # we might need to re-evaluate the F_t calculation from the fusion method.
+                # For now, let's just use the current state as a simple prediction if elapsed > 0 and mode is 2
+                # TODO: Implement proper F_pred for mode 2 if needed for matching
+                predicted_x = self.X_hat_t[0][0]
+                predicted_y = self.X_hat_t[1][0]
+                predicted_P = self.P_hat_t
+                a, b, phi = utils.ellipsify(predicted_P[0:2, 0:2], 1.0)
+                return predicted_x, predicted_y, a, b, phi
+
+            predicted_X_hat, predicted_P = utils.kalman_prediction(
+                self.X_hat_t, self.P_hat_t, F_pred, self.B_t, self.U_t, self.Q_t)
+            predicted_x = predicted_X_hat[0][0]
+            predicted_y = predicted_X_hat[1][0]
+
+        a, b, phi = utils.ellipsify(predicted_P[0:2, 0:2], 1.0)
+        return predicted_x, predicted_y, a, b, phi
 
 
 class GlobalTracked:
-    def __init__(self, sensor_id, x, y, covariance, dx, dy, dcovariance, confidence, trust_score, time, track_id, fusion_mode, width, length, angle):
-        self.x = x
-        self.y = y
+    def __init__(self, detected_object, time, track_id, fusion_mode):
+        self.x = detected_object.centroid[0]
+        self.y = detected_object.centroid[1]
         self.dx = 0
         self.dy = 0
         self.error_covariance = np.array(
@@ -426,93 +473,61 @@ class GlobalTracked:
         self.fusion_steps = 0
         self.error_monitor = []
         self.num_trackers = 0
-        self.width = width
-        self.length = length
-        self.angle = angle
+        self.width = detected_object.dimensions[0]
+        self.length = detected_object.dimensions[1]
+        self.angle = detected_object.angle
 
         # Trupercept stuff
         self.trupercept_list = []
 
         # Add this first match
-        new_match = MatchClass(sensor_id, x, y, covariance, dx,
-                               dy, dcovariance, confidence, trust_score, 0, time, width, length, angle)
+        new_match = MatchClass(detected_object.vehicle_id, detected_object.centroid[0], detected_object.centroid[1], detected_object.error_covariance,
+                               detected_object.velocity_vector[0], detected_object.velocity_vector[1], detected_object.error_covariance, 1.0, 1.0, 0, time, detected_object.dimensions[0], detected_object.dimensions[1], detected_object.angle)
         self.match_list.append(new_match)
 
         # Kalman stuff
         self.fusion_mode = fusion_mode
-        self.kalman = ResizableKalman(time, x, y, fusion_mode)
+        self.kalman = ResizableKalman(time, self.x, self.y, fusion_mode)
 
-    def update(self, other, time):
-        new_match = MatchClass(other[0], other[1], other[2], other[3],
-                               other[4], other[5], other[6], other[7], other[8], 0, time, other[9], other[10], other[11])
+    def update(self, detected_object, time):
+        new_match = MatchClass(detected_object.vehicle_id, detected_object.centroid[0], detected_object.centroid[1], detected_object.error_covariance,
+                               detected_object.velocity_vector[0], detected_object.velocity_vector[1], detected_object.error_covariance, 1.0, 1.0, 0, time, detected_object.dimensions[0], detected_object.dimensions[1], detected_object.angle)
         self.match_list.append(new_match)
 
         self.last_measurement = time
 
-        self.track_count += 1
-
     # Gets our position in an array form so we can use it in the BallTree
     def getPosition(self):
         return [
-            [self.x, self.y, self.width + 1.0, self.length + 2.0, self.angle]
+            [self.x, self.y, self.width, self.length, self.angle]
         ]
 
     def getPositionPredicted(self, timestamp):
-        if self.fusion_steps <= 4:
-            # If this kalman filter has never been run, we can't use it for prediction!
-            return self.getPosition()
-        else:
-            # Calculate the time elapsed since the last update
-            elapsed_time = timestamp - self.last_update
+        # Call the Kalman filter's prediction method
+        predicted_x, predicted_y, a, b, phi = self.kalman.getKalmanPred(timestamp)
 
-            # Predict the new position based on the velocity (dx, dy)
-            predicted_x = self.x + self.dx * elapsed_time
-            predicted_y = self.y + self.dy * elapsed_time
+        # Dynamically adjust the bounding box size based on Kalman filter's uncertainty
+        # Use 3 standard deviations for the matching gate
+        adjusted_width = self.width + (a * 3.0) # Multiply 'a' (semi-major axis of error ellipse) by a factor
+        adjusted_length = self.length + (b * 3.0) # Multiply 'b' (semi-minor axis of error ellipse) by a factor
 
-            # Get the uncertainty from the Kalman filter
-            _, _, a, b, phi = self.kalman.getKalmanPred(timestamp)
-
-            # Return the predicted position with the current width, length, and angle
-            return [
-                [predicted_x, predicted_y, self.width + 1.0, self.length + 3.0, self.angle]
-            ]
+        # Return the predicted position with the dynamically adjusted width and length
+        return [
+            [predicted_x, predicted_y, adjusted_width, adjusted_length, self.angle]
+        ]
 
     def fusion(self, time, monitor):
-        # self.kalman.fusion(self.match_list, time, monitor)
-        # self.x = self.kalman.x
-        # self.y = self.kalman.y
-        # self.error_covariance = self.kalman.error_covariance
-        # self.dx = self.kalman.dx
-        # self.dy = self.kalman.dy
-        # self.d_covariance = self.kalman.d_covariance
-        # self.error_monitor = self.kalman.error_tracker_temp
-        # self.num_trackers = len(self.kalman.localTrackersIDList)
-        # self.trupercept_list = self.kalman.trupercept_list
+        self.kalman.fusion(self.match_list, time, monitor)
+        self.x = self.kalman.x
+        self.y = self.kalman.y
+        self.error_covariance = self.kalman.error_covariance
+        self.dx = self.kalman.dx
+        self.dy = self.kalman.dy
+        self.d_covariance = self.kalman.d_covariance
+        self.error_monitor = self.kalman.error_tracker_temp
+        self.num_trackers = len(self.kalman.localTrackersIDList)
+        self.trupercept_list = self.kalman.trupercept_list
         self.fusion_steps += 1
-
-        # Calculate the weighted average width, length, angle, x, and y
-        if len(self.match_list) > 0:
-            total_weight = 0
-            weighted_x = 0
-            weighted_y = 0
-            weighted_width = 0
-            weighted_length = 0
-            weighted_angle = 0
-
-            for match in self.match_list:
-                weight = 1 / np.linalg.det(match.covariance)
-                total_weight += weight
-                weighted_x += match.x * weight
-                weighted_y += match.y * weight
-                weighted_width += match.width * weight
-                weighted_length += match.length * weight
-                weighted_angle += match.angle * weight
-
-            self.x = weighted_x / total_weight
-            self.y = weighted_y / total_weight
-            self.width = weighted_width / total_weight
-            self.length = weighted_length / total_weight
-            self.angle = weighted_angle / total_weight
 
     def clearLastFrame(self):
         self.match_list = []
@@ -555,38 +570,25 @@ class Fusion:
                 # print("Track ID: ", track.id, "X: ", track.x, "Y: ", track.y, "DX: ", track.dx, "DY: ", track.dy)
                 
                 # Create a DetectedObject instance and append to the list
-                angle = track.angle  # Use the averaged angle
-                half_width = track.width / 2
-                half_length = track.length / 2
-
-                # Calculate the corners of the bounding box
-                cos_angle = math.cos(angle)
-                sin_angle = math.sin(angle)
-
-                # Center of the bounding box
-                cx, cy = track.x, track.y
-
-                # Calculate the four corners of the bounding box
-                bbox = [
-                    (cx - half_width * cos_angle - half_length * sin_angle, cy - half_width * sin_angle + half_length * cos_angle),
-                    (cx + half_width * cos_angle - half_length * sin_angle, cy + half_width * sin_angle + half_length * cos_angle),
-                    (cx + half_width * cos_angle + half_length * sin_angle, cy + half_width * sin_angle - half_length * cos_angle),
-                    (cx - half_width * cos_angle + half_length * sin_angle, cy - half_width * sin_angle - half_length * cos_angle)
-                ]
-
                 detected_object = DetectedObject(
                     vehicle_id=track.id,
                     vehicle_type=None,  # Assuming track has a type attribute
-                    detected_bbox=bbox,  # Bounding box calculated from position, angle, and min size
+                    detected_bbox=None,  # Bounding box will be calculated by the property
                     centroid=[track.x, track.y],
                     width=track.width,
                     length=track.length,
-                    angle=angle,  # Use the averaged angle
+                    angle=track.angle,  # Use the averaged angle
                     expected_error_gaussian=None,
                     error_covariance=track.error_covariance,
                     velocity_vector=[track.dx, track.dy]
                 )
                 detected_objects.append(detected_object)
+
+                # Now use the property to get the bounding box corners
+                bbox = detected_object.detected_bbox_corners
+
+                # If you need to use the bbox directly later, you can update the detected_bbox attribute
+                detected_object.detected_bbox = bbox
 
             track.clearLastFrame()
 
@@ -601,12 +603,7 @@ class Fusion:
         for det in observations:
             detections_list_positions.append(
                 [det.centroid[0], det.centroid[1], det.dimensions[0], det.dimensions[1], det.angle])
-            if det.expected_error_gaussian is not None:
-                detections_list.append([det.vehicle_id, det.centroid[0], det.centroid[1], np.array(
-                    det.expected_error_gaussian.covariance.tolist()), det.dimensions[0], det.dimensions[1], np.array(det.velocity_vector), det.type, trust_score, det.dimensions[0], det.dimensions[1], det.angle])
-            else:
-                detections_list.append([det.vehicle_id, det.centroid[0], det.centroid[1], np.array(
-                    det.error_covariance), det.dimensions[0], det.dimensions[1], np.array(det.velocity_vector), det.type, trust_score, det.dimensions[0], det.dimensions[1], det.angle])
+            detections_list.append(det)
 
         # Call the matching function to modify our detections in tracked_list
         self.matchDetections(detections_list_positions, detections_list,
@@ -620,21 +617,52 @@ class Fusion:
             
             # Check if there are any existing tracks
             if len(self.tracked_list) > 0:
-                numpy_formatted = np.array(detections_list_positions).reshape(len(detections_list_positions), 5)
-                thisFrameTrackTree = BallTree(numpy_formatted, metric=utils.computeDistanceBBox)
+                # For small numbers of detections, linear search might be faster than building a tree
+                detection_count = len(detections_list_positions)
+                
+                # Only build BallTree if we have enough detections to justify it
+                # BallTree construction is O(n log n), so for small n, linear search is faster
+                if detection_count > 10:  # Threshold: use tree for >10 detections
+                    numpy_formatted = np.array(detections_list_positions).reshape(len(detections_list_positions), 5)
+                    thisFrameTrackTree = BallTree(numpy_formatted, metric=utils.computeDistanceBBox)
+                else:
+                    # For small numbers, use None to trigger linear search fallback
+                    thisFrameTrackTree = None
+                    numpy_formatted = np.array(detections_list_positions).reshape(len(detections_list_positions), 5)
 
                 length = len(numpy_formatted)
                 if length > 0:
                     for tracked_listIdx, track in enumerate(self.tracked_list):
-                        # Query the BallTree for the nearest neighbors
-                        tuple = thisFrameTrackTree.query(np.array(track.getPositionPredicted(timestamp)), k=length, return_distance=True)
+                        # Query the BallTree for the nearest neighbors (or use linear search for small counts)
+                        if thisFrameTrackTree is not None:
+                            # Use BallTree for efficient querying
+                            tuple = thisFrameTrackTree.query(np.array(track.getPositionPredicted(timestamp)), k=length, return_distance=True)
+                            distances = tuple[0][0]
+                            indices = tuple[1][0]
+                        else:
+                            # Linear search for small detection counts (faster than building tree)
+                            track_pos_list = track.getPositionPredicted(timestamp)
+                            track_pos = track_pos_list[0]  # getPositionPredicted returns [[x, y, w, h, angle]]
+                            distances_and_indices = []
+                            for idx, det_pos in enumerate(detections_list_positions):
+                                # Compute distance using the same metric as BallTree
+                                distance = utils.computeDistanceBBox(
+                                    track_pos,  # [x, y, width, length, angle]
+                                    det_pos
+                                )
+                                distances_and_indices.append((distance, idx))
+                            # Sort by distance and take top k
+                            distances_and_indices.sort(key=lambda x: x[0])
+                            distances = np.array([d[0] for d in distances_and_indices[:length]])
+                            indices = np.array([d[1] for d in distances_and_indices[:length]])
+                        
                         first = True
-                        for IOUVsDetection, detectionIdx in zip(tuple[0][0], tuple[1][0]):
-                            if IOUVsDetection < 0.75: # Score is 1 - IOU
+                        for IOUVsDetection, detectionIdx in zip(distances, indices):
+                            if IOUVsDetection < 0.5: # Score is 1 - IOU
                                 if first:
                                     try:
                                         index = [i[0] for i in matches].index(detectionIdx)
-                                        if matches[index][2] < IOUVsDetection:
+                                        if matches[index][2] > IOUVsDetection:
                                             matches.append([detectionIdx, tracked_listIdx, IOUVsDetection])
                                             matches[index][2] = 1
                                             matches[index][1] = -99
@@ -656,10 +684,10 @@ class Fusion:
                     if len(track.relations) == 1:
                         track.update(detection_list[track.relations[0][0]], timestamp)
                     elif len(track.relations) > 1:
-                        max = 0
+                        max = 100 # Initialize with a high value for distance (1 - IOU)
                         idx = -99
                         for rel in track.relations:
-                            if rel[1] < max:
+                            if rel[1] < max: # Look for the smallest distance (highest IOU)
                                 max = rel[1]
                                 idx = rel[0]
 
@@ -675,10 +703,8 @@ class Fusion:
                 added = []
                 for add in missing:
                     added.append(add)
-                    new = GlobalTracked(detection_list[add][0], detection_list[add][1], detection_list[add][2],
-                                        detection_list[add][3], detection_list[add][4], detection_list[add][5],
-                                        detection_list[add][6], detection_list[add][7], detection_list[add][8],
-                                        timestamp, (max_id * self.id) + self.current_track_id, self.fusion_mode, detection_list[add][9], detection_list[add][10], detection_list[add][11])
+                    new = GlobalTracked(detection_list[add],
+                                        timestamp, (max_id * self.id) + self.current_track_id, self.fusion_mode)
                     if self.current_track_id < max_id:
                         self.current_track_id += 1
                     else:
@@ -688,8 +714,7 @@ class Fusion:
             else:
                 # If there are no existing tracks, create new tracks for all detections
                 for dl in detection_list:
-                    new = GlobalTracked(dl[0], dl[1], dl[2], dl[3], dl[4], dl[5],
-                                        dl[6], dl[7], dl[8], timestamp, (max_id * self.id) + self.current_track_id, self.fusion_mode, dl[9], dl[10], dl[11])
+                    new = GlobalTracked(dl, timestamp, (max_id * self.id) + self.current_track_id, self.fusion_mode)
                     if self.current_track_id < max_id:
                         self.current_track_id += 1
                     else:
@@ -720,8 +745,13 @@ class Fusion:
             if len(self.tracked_list) > 0:
                 numpy_formatted = np.array(detections_position_list).reshape(
                     len(detections_position_list), 5)
-                thisFrameTrackTree = BallTree(
-                    numpy_formatted, metric=utils.computeDistanceBBox)
+                # Optimization #3: Only build BallTree if we have enough detections
+                detection_count = len(detections_position_list)
+                if detection_count > 10:  # Threshold: use tree for >10 detections
+                    thisFrameTrackTree = BallTree(
+                        numpy_formatted, metric=utils.computeDistanceBBox)
+                else:
+                    thisFrameTrackTree = None
 
                 # Need to check the tree size here in order to figure out if we can even do this
                 length = len(numpy_formatted)
@@ -730,10 +760,25 @@ class Fusion:
                         # The only difference between this and our other version is that
                         # the below line is commented out
                         # track.calcEstimatedPos(timestamp - self.prev_time)
-                        tuple = thisFrameTrackTree.query(np.array(track.getPosition()), k=length,
-                                                         return_distance=True)
+                        if thisFrameTrackTree is not None:
+                            tuple = thisFrameTrackTree.query(np.array(track.getPosition()), k=length,
+                                                             return_distance=True)
+                            distances = tuple[0][0]
+                            indices = tuple[1][0]
+                        else:
+                            # Linear search for small detection counts
+                            track_pos_list = track.getPosition()
+                            track_pos = track_pos_list[0]  # getPosition returns [[x, y, w, h, angle]]
+                            distances_and_indices = []
+                            for idx, det_pos in enumerate(detections_position_list):
+                                distance = utils.computeDistanceBBox(track_pos, det_pos)
+                                distances_and_indices.append((distance, idx))
+                            distances_and_indices.sort(key=lambda x: x[0])
+                            distances = np.array([d[0] for d in distances_and_indices[:length]])
+                            indices = np.array([d[1] for d in distances_and_indices[:length]])
+                        
                         first = True
-                        for IOUVsDetection, detectionIdx in zip(tuple[0][0], tuple[1][0]):
+                        for IOUVsDetection, detectionIdx in zip(distances, indices):
                             # 100% match is ourself! Look for IOU > .50 for now to delete
                             if .25 >= IOUVsDetection > 0.001:
                                 # Only grab the first match
