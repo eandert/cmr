@@ -6,6 +6,7 @@ import numpy as np
 import utils
 import gaussians
 from config.detector_type import DetectorType
+from error_models import get_error_model
 
 class Sensor:
     """
@@ -23,16 +24,20 @@ class Sensor:
         detection_probability_polynomial (Polynomial): Polynomial for detection probability.
     """
     
-    def __init__(self, sensor_type, detector_type):
+    def __init__(self, sensor_type, detector_type, use_gpem_model=False, use_quadratic=False, detector_max_range=None):
         """
         Initialize the sensor with its properties and error models.
         
         Args:
             sensor_type (SensorType): The type of the sensor.
             detector_type (DetectorType): The type of the detector.
+            use_gpem_model (bool): If True, use GPEM parameterized covariance. If False, use static averaged covariance.
+            use_quadratic (bool): If True and use_gpem_model=True, use quadratic regression instead of linear.
+            detector_max_range (float): Max detection range in meters. None uses default (60m).
         """
         self.sensor_type_id = sensor_type.id
         self.detector_type_id = detector_type.id
+        self.detector_type = detector_type  # Keep reference for error model lookup
         self.max_range = sensor_type.max_range
         self.horizontal_fov = sensor_type.horizontal_fov
         self.center_angle = sensor_type.center_angle
@@ -40,6 +45,16 @@ class Sensor:
         self.centroid_distance_error_polynomial = utils.Polynomial(detector_type.centroid_distance_error_polynomial)
         self.bounding_box_error_polynomial = utils.Polynomial(detector_type.bounding_box_error_polynomial)
         self.detection_probability_polynomial = utils.Polynomial(detector_type.detection_probability_polynomial)
+        
+        # Load regression-tested error model if available
+        self.error_model = None
+        if hasattr(detector_type, 'error_model_name') and detector_type.error_model_name:
+            self.error_model = get_error_model(detector_type.error_model_name, use_gpem_model=use_gpem_model,
+                                               use_quadratic=use_quadratic, max_range=detector_max_range)
+            # Override sensor max_range with error model's max_range for consistent filtering
+            # This ensures ground truth filtering matches the detector's actual range
+            self.max_range = self.error_model.max_range
+        
         # Initialize sensor's original extrinsics relative to the SensorPackage
         self.x_extrinsics_original = 0.0
         self.y_extrinsics_original = 0.0
@@ -109,11 +124,18 @@ class Sensor:
         Returns:
             float: The detection probability.
         """
+        # Use regression-tested error model if available
+        if self.error_model:
+            return self.error_model.detection_probability(distance)
         return self.detection_probability_polynomial.evaluate(distance)
+    
+    def uses_regression_error_model(self):
+        """Check if this sensor uses a regression-tested error model."""
+        return self.error_model is not None
 
 
 class DetectedObject:
-    def __init__(self, vehicle_id, vehicle_type, detected_bbox, centroid, width, length, angle, expected_error_gaussian, velocity_vector=None, error_covariance=None):
+    def __init__(self, vehicle_id, vehicle_type, detected_bbox, centroid, width, length, angle, expected_error_gaussian, velocity_vector=None, error_covariance=None, width_std=0.5, length_std=0.5):
         self.vehicle_id = vehicle_id
         self.type = vehicle_type
         self.detected_bbox = detected_bbox
@@ -123,6 +145,8 @@ class DetectedObject:
         self.velocity_vector = velocity_vector
         self.expected_error_gaussian = expected_error_gaussian
         self.error_covariance = error_covariance
+        self.width_std = width_std
+        self.length_std = length_std
 
     @property
     def detected_bbox_corners(self):
@@ -130,19 +154,16 @@ class DetectedObject:
         half_width = self.dimensions[0] / 2
         half_length = self.dimensions[1] / 2
 
-        # Calculate the corners of the bounding box
-        cos_angle = math.cos(angle)
-        sin_angle = math.sin(angle)
-
         # Center of the bounding box
         cx, cy = self.centroid
 
-        # Calculate the four corners of the bounding box
+        # Standard convention: length is along heading axis, width is perpendicular
+        # Use robust rotate_point to avoid manual math errors
         bbox = [
-            (cx - half_width * cos_angle - half_length * sin_angle, cy - half_width * sin_angle + half_length * cos_angle),
-            (cx + half_width * cos_angle - half_length * sin_angle, cy + half_width * sin_angle + half_length * cos_angle),
-            (cx + half_width * cos_angle + half_length * sin_angle, cy + half_width * sin_angle - half_length * cos_angle),
-            (cx - half_width * cos_angle + half_length * sin_angle, cy - half_width * sin_angle - half_length * cos_angle)
+            utils.rotate_point(cx - half_length, cy - half_width, cx, cy, angle),
+            utils.rotate_point(cx + half_length, cy - half_width, cx, cy, angle),
+            utils.rotate_point(cx + half_length, cy + half_width, cx, cy, angle),
+            utils.rotate_point(cx - half_length, cy + half_width, cx, cy, angle)
         ]
         return bbox
 
@@ -210,13 +231,23 @@ class DetectedObject:
         )
         return polygon_vector_id # Return the ID for management
 
-def create_detected_bounding_boxes(sensor, sensor_pose, ground_truth_objects, sensor_package_id):
+def create_detected_bounding_boxes(sensor, actual_pose, believed_pose, ground_truth_objects, sensor_package_id):
     """
     Create a set of detected bounding boxes based on the sensor properties and ground truth objects.
     
+    Extrinsics error simulation:
+    - actual_pose: Where the sensor physically is (with calibration errors)
+    - believed_pose: Where the sensor's software thinks it is (original calibration)
+    
+    When there's an extrinsics error:
+    1. Sensor measures from its actual physical position
+    2. But transforms back to global using believed position (wrong calibration)
+    3. This causes systematic position errors in detections
+    
     Args:
         sensor (Sensor): The sensor object.
-        sensor_pose (tuple): The sensor's absolute pose as (x, y, yaw) after applying extrinsics and any errors.
+        actual_pose (tuple): The sensor's actual physical pose as (x, y, yaw) with extrinsics errors.
+        believed_pose (tuple): The sensor's believed pose as (x, y, yaw) without extrinsics errors.
         ground_truth_objects (list): A list of GroundTruthObject instances.
         sensor_package_id (str): The ID of the sensor package.
     
@@ -225,10 +256,16 @@ def create_detected_bounding_boxes(sensor, sensor_pose, ground_truth_objects, se
     """
     detected_objects = []
     detected_ground_truths = []
-    # The sensor_pose already incorporates original extrinsics and any errors
-    sensor_x = sensor_pose[0]
-    sensor_y = sensor_pose[1]
-    sensor_yaw = sensor_pose[2]
+    
+    # ACTUAL position - where sensor physically is
+    actual_x = actual_pose[0]
+    actual_y = actual_pose[1]
+    actual_yaw = actual_pose[2]
+    
+    # BELIEVED position - where sensor's software thinks it is
+    believed_x = believed_pose[0]
+    believed_y = believed_pose[1]
+    believed_yaw = believed_pose[2]
 
     detection_id = 0
 
@@ -237,11 +274,12 @@ def create_detected_bounding_boxes(sensor, sensor_pose, ground_truth_objects, se
         if gt_obj.vehicle_id == sensor_package_id:
             continue
 
-        # Calculate the relative position of the ground truth object to the sensor
-        dx = gt_obj.centroid[0] - sensor_x
-        dy = gt_obj.centroid[1] - sensor_y
+        # Calculate the relative position of the ground truth object to the ACTUAL sensor position
+        # (This is what the sensor physically measures)
+        dx = gt_obj.centroid[0] - actual_x
+        dy = gt_obj.centroid[1] - actual_y
         distance = math.sqrt(dx**2 + dy**2)
-        angle_to_obj = math.atan2(dy, dx) - sensor_yaw
+        angle_to_obj = math.atan2(dy, dx) - actual_yaw
 
         # Normalize the angle to the range [-pi, pi]
         angle_to_obj = (angle_to_obj + math.pi) % (2 * math.pi) - math.pi
@@ -257,42 +295,112 @@ def create_detected_bounding_boxes(sensor, sensor_pose, ground_truth_objects, se
                 detected_ground_truths.append(gt_obj) # Only add to detected_ground_truths if actually detected
 
                 # If it's a PERFECT detector, set errors to zero
-                if sensor.detector_type_id == DetectorType.PERFECT:
+                if sensor.detector_type_id == DetectorType.PERFECT.id:
                     actual_error = (0.0, 0.0)
                     width_error = 0.0
                     length_error = 0.0
+                    yaw_error = 0.0
+                    width_std = 1e-6
+                    length_std = 1e-6
                     expected_error_gaussian = gaussians.BivariateGaussian(0.000001, 0.000001, angle_to_obj) # Near zero covariance
+                elif sensor.uses_regression_error_model():
+                    # Use regression-tested error model (distance-binned distributions)
+                    error_model = sensor.error_model
+                    
+                    # Sample all errors including position, dimensions, and yaw
+                    errors = error_model.sample_all_errors(distance, angle_to_obj)
+                    actual_error = (errors['x_error'], errors['y_error'])
+                    width_error = errors['width_error']
+                    length_error = errors['length_error']
+                    yaw_error = errors['yaw_error']
+                    
+                    # Store dimension stds for Kalman filter
+                    width_std = errors['width_std']
+                    length_std = errors['length_std']
+                    
+                    # Build covariance from the predicted stds
+                    # ROTATION: Bring sensor-relative covariance into global frame
+                    # distal_std is along the ray to the object (angle_to_obj in sensor frame)
+                    # To get global distal axis, add sensor heading (believed_yaw)
+                    expected_error_gaussian = gaussians.BivariateGaussian(
+                        errors['distal_std']**2, errors['perp_std']**2, believed_yaw + angle_to_obj
+                    )
                 else:
-                    # Calculate the detected bounding box with errors
+                    # Use polynomial-based error model
                     radial_error = sensor.centroid_radial_error_at_distance(distance)
-                    distance_error = sensor.centroid_distance_error_at_distance(distance)
+                    distal_error = sensor.centroid_distance_error_at_distance(distance)
                     bbox_error = sensor.bounding_box_error_at_distance(distance)
 
-                    expected_error_gaussian, actual_error = calculateErrorGaussian(angle_to_obj, radial_error, distance_error)
+                    # SAMPLING: Sample in distal/radial frame and rotate to sensor frame
+                    # (actual_error is added to local_x/y later)
+                    actual_radial_samp = np.random.normal(0, radial_error)
+                    actual_distal_samp = np.random.normal(0, distal_error)
+                    actual_error_x = actual_distal_samp * math.cos(angle_to_obj) - actual_radial_samp * math.sin(angle_to_obj)
+                    actual_error_y = actual_distal_samp * math.sin(angle_to_obj) + actual_radial_samp * math.cos(angle_to_obj)
+                    actual_error = (actual_error_x, actual_error_y)
+
+                    # COVARIANCE: Build global covariance for the Kalman filter
+                    # distal_std is along the ray to the object (angle_to_obj in sensor frame)
+                    # To get global distal axis, add sensor heading (believed_yaw)
+                    expected_error_gaussian = gaussians.BivariateGaussian(
+                        distal_error**2, radial_error**2, believed_yaw + angle_to_obj
+                    )
 
                     # Calculate the new bounding box error
                     width_error, length_error = calculateBBoxError(bbox_error)
+                    yaw_error = 0.0  # No yaw error for polynomial model
+                    width_std = bbox_error
+                    length_std = bbox_error
 
-                # Move the centroid using the actual error
-                new_centroid_x = gt_obj.centroid[0] + actual_error[0]
-                new_centroid_y = gt_obj.centroid[1] + actual_error[1]
+                # EXTRINSICS ERROR HANDLING:
+                # Simulate proper extrinsics calibration error:
+                # 1. Sensor is physically at ACTUAL position (with calibration errors)
+                # 2. Sensor measures relative position from its ACTUAL physical location
+                # 3. But sensor's software transforms back using BELIEVED position (wrong calibration)
+                # This causes systematic position errors when calibration is wrong.
+                
+                # Step 1: Transform to sensor-local frame using ACTUAL orientation
+                # (dx, dy already calculated relative to ACTUAL sensor position above)
+                # actual_yaw is now in standard math convention
+                cos_actual = math.cos(-actual_yaw)
+                sin_actual = math.sin(-actual_yaw)
+                local_x = dx * cos_actual - dy * sin_actual
+                local_y = dx * sin_actual + dy * cos_actual
+                
+                # Step 2: Add sensing noise in local frame (radial/perpendicular errors)
+                local_x += actual_error[0]
+                local_y += actual_error[1]
+                
+                # Step 3: Transform back to global using BELIEVED sensor pose (wrong calibration!)
+                # This is where extrinsics errors manifest - sensor uses wrong pose in transform
+                # believed_yaw is now in standard math convention
+                cos_believed = math.cos(believed_yaw)
+                sin_believed = math.sin(believed_yaw)
+                new_centroid_x = believed_x + local_x * cos_believed - local_y * sin_believed
+                new_centroid_y = believed_y + local_x * sin_believed + local_y * cos_believed
+                
+                # Apply yaw error to the detected angle
+                detected_angle = gt_obj.angle + yaw_error
 
                 # Calculate the size of the bounding box in ± width and ± length
-                width = (gt_obj.dimensions[0] + width_error) / 2
-                length = (gt_obj.dimensions[1] + length_error) / 2
+                detected_width = gt_obj.dimensions[0] + width_error
+                detected_length = gt_obj.dimensions[1] + length_error
+                half_width = detected_width / 2
+                half_length = detected_length / 2
 
-                # Compute the global coordinates of the bounding box corners
-                bbox_x_min = new_centroid_x - width
-                bbox_x_max = new_centroid_x + width
-                bbox_y_min = new_centroid_y - length
-                bbox_y_max = new_centroid_y + length
+                # Compute the global coordinates of the bounding box corners (axis-aligned at 0 rad)
+                # At 0 radians (East), length is along x and width is along y.
+                bbox_x_min = new_centroid_x - half_length
+                bbox_x_max = new_centroid_x + half_length
+                bbox_y_min = new_centroid_y - half_width
+                bbox_y_max = new_centroid_y + half_width
                 
-                # Rotate the bounding box based on the vehicle's angle
+                # Rotate the bounding box based on the detected angle (with error)
                 detected_bbox = [
-                    utils.rotate_point(bbox_x_min, bbox_y_min, new_centroid_x, new_centroid_y, gt_obj.angle),
-                    utils.rotate_point(bbox_x_max, bbox_y_min, new_centroid_x, new_centroid_y, gt_obj.angle),
-                    utils.rotate_point(bbox_x_max, bbox_y_max, new_centroid_x, new_centroid_y, gt_obj.angle),
-                    utils.rotate_point(bbox_x_min, bbox_y_max, new_centroid_x, new_centroid_y, gt_obj.angle)
+                    utils.rotate_point(bbox_x_min, bbox_y_min, new_centroid_x, new_centroid_y, detected_angle),
+                    utils.rotate_point(bbox_x_max, bbox_y_min, new_centroid_x, new_centroid_y, detected_angle),
+                    utils.rotate_point(bbox_x_max, bbox_y_max, new_centroid_x, new_centroid_y, detected_angle),
+                    utils.rotate_point(bbox_x_min, bbox_y_max, new_centroid_x, new_centroid_y, detected_angle)
                 ]
 
                 detected_objects.append(DetectedObject(
@@ -300,34 +408,19 @@ def create_detected_bounding_boxes(sensor, sensor_pose, ground_truth_objects, se
                     vehicle_type=gt_obj.type,
                     detected_bbox=detected_bbox,
                     centroid=(new_centroid_x, new_centroid_y),
-                    width=gt_obj.dimensions[0],
-                    length=gt_obj.dimensions[1],
-                    angle=gt_obj.angle,
+                    width=detected_width,
+                    length=detected_length,
+                    angle=detected_angle,
                     expected_error_gaussian=expected_error_gaussian,
                     velocity_vector=gt_obj.velocity_vector,
-                    error_covariance=expected_error_gaussian.covariance
+                    error_covariance=expected_error_gaussian.covariance,
+                    width_std=width_std,
+                    length_std=length_std
                 ))
 
                 detection_id += 1
 
     return detected_objects, detected_ground_truths
-
-def calculateErrorGaussian(target_line_angle, radial_error, distal_error):
-    # Calculate our expected elipse error bounds
-    elipse_angle_expected = target_line_angle
-    
-    expected_error_gaussian = gaussians.BivariateGaussian(distal_error**2,
-                                                radial_error**2,
-                                                elipse_angle_expected)
-
-    # Calculate our expected errors in x,y coordinates
-    actualRadialError = np.random.normal(0, radial_error, 1)[0]
-    actualDistanceError = np.random.normal(0, distal_error, 1)[0]
-    actual_error_gaussian = gaussians.BivariateGaussian(actualDistanceError**2,
-                                                actualRadialError**2,
-                                                elipse_angle_expected)
-    actual_error = actual_error_gaussian.calc_xy_components()
-    return expected_error_gaussian, actual_error
 
 def calculateBBoxError(bbox_error):
     # Calculate our expected errors in width and length

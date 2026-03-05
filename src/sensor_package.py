@@ -1,4 +1,5 @@
 import math
+import copy
 import utils
 import sensor
 import ground_truth
@@ -19,9 +20,10 @@ class SensorPackage:
         sensor_detection_sets (list): A list of detection sets for each sensor.
         detection_set_timestamp (float): The timestamp of the detection set.
         localizer (Localizer): The localizer object for the SensorPackage.
+        has_error (bool): Whether this CAV has permanent error flag (set at creation).
     """
     
-    def __init__(self, sensor_package_id, sensors, sensors_extrinsics, localizer, error_package):
+    def __init__(self, sensor_package_id, sensors, sensors_extrinsics, localizer, error_package, has_error=False):
         """
         Initialize the SensorPackage with its ID, sensors, sensors' extrinsics, and localizer.
         
@@ -31,6 +33,7 @@ class SensorPackage:
             sensors_extrinsics (list): A list of extrinsic parameters for each sensor.
             localizer (Localizer): The localizer object for the SensorPackage.
             error_package (ErrorPackage): The error package to apply errors.
+            has_error (bool): Whether this CAV has errors (set ONCE at creation, permanent).
         """
         self.sensor_package_id = sensor_package_id
         self.ground_truth_obj = None
@@ -42,53 +45,83 @@ class SensorPackage:
         self.sensor_fusion = sensor_fusion.Fusion(self.integer_id)
         self.localizer = localizer
         self.error = error_package
+        self.has_error = has_error  # Permanent error flag for this CAV
         self.roll1 = random.random()
         self.roll2 = random.random()
         self.error_x = None
         self.error_y = None
 
-        # Assign initial extrinsics to each sensor object
+        # Deep copy and assign initial extrinsics to each sensor object
+        # Each SensorPackage needs its own sensor instances to have independent error states
         for i, sensor_obj in enumerate(sensors):
-            sensor_obj.x_extrinsics_original = sensors_extrinsics[i][0]
-            sensor_obj.y_extrinsics_original = sensors_extrinsics[i][1]
-            sensor_obj.angle_extrinsics_original = sensors_extrinsics[i][2]
-            self.sensors.append(sensor_obj)
+            # Create a deep copy so each SensorPackage has independent sensors
+            sensor_copy = copy.deepcopy(sensor_obj)
+            sensor_copy.x_extrinsics_original = sensors_extrinsics[i][0]
+            sensor_copy.y_extrinsics_original = sensors_extrinsics[i][1]
+            sensor_copy.angle_extrinsics_original = sensors_extrinsics[i][2]
+            # Reset error offsets for this fresh copy
+            sensor_copy.x_offset_error = 0.0
+            sensor_copy.y_offset_error = 0.0
+            sensor_copy.angle_offset_error = 0.0
+            self.sensors.append(sensor_copy)
 
-        # Apply single or multi-sensor extrinsics errors
-        if self.error.error_type == ErrorType.SINGLE_SENSOR_EXTRINSICS and random.random() < self.error.probability:
-            # Apply error to a single random sensor
-            target_sensor_idx = random.randint(0, len(self.sensors) - 1)
-            self.sensors[target_sensor_idx] = self.error.inject_single_sensor_extrinsics_error(self.sensors[target_sensor_idx])
-        elif self.error.error_type == ErrorType.MULTI_SENSOR_EXTRINSICS and random.random() < self.error.probability:
-            # Apply error to all sensors
-            self.sensors = self.error.inject_multi_sensor_extrinsics_error(self.sensors)
+        # Apply single or multi-sensor extrinsics errors ONCE at creation (if this CAV has errors)
+        if self.error.is_active and self.has_error:
+            if self.error.error_type == ErrorType.SINGLE_SENSOR_EXTRINSICS:
+                # Apply error to a single random sensor (permanent calibration error)
+                target_sensor_idx = random.randint(0, len(self.sensors) - 1)
+                self.sensors[target_sensor_idx] = self.error.inject_single_sensor_extrinsics_error(self.sensors[target_sensor_idx])
+            elif self.error.error_type == ErrorType.MULTI_SENSOR_EXTRINSICS:
+                # Apply error to all sensors (permanent calibration error)
+                self.sensors = self.error.inject_multi_sensor_extrinsics_error(self.sensors)
         
-    def set_sensor_poses(self):
+    def set_sensor_poses(self, true_ego_pose, believed_ego_pose):
         """
-        Set the sensor poses for the SensorPackage based on the SensorPackage's pose and the sensors' extrinsics.
+        Set the sensor poses for the SensorPackage based on true and believed ego poses.
+        
+        This handles both extrinsics errors AND localization errors:
+        - Extrinsics error: sensor is at wrong position relative to ego
+        - Localization error: ego's believed position differs from true position
+        
+        Args:
+            true_ego_pose (tuple): Where the ego vehicle actually is (x, y, yaw)
+            believed_ego_pose (tuple): Where localization thinks the ego is (x, y, yaw)
         
         Returns:
-            list: A list of sensor poses as (x, y, yaw).
+            tuple: (actual_poses, believed_poses) where each is a list of (x, y, yaw).
+                   - actual_poses: Where sensors physically are (true ego + actual extrinsics)
+                   - believed_poses: Where software thinks sensors are (believed ego + believed extrinsics)
         """
+        true_x, true_y, true_yaw = true_ego_pose
+        believed_x, believed_y, believed_yaw = believed_ego_pose
         
-        cav_x, cav_y, cav_yaw = self.ground_truth_obj.centroid[0], self.ground_truth_obj.centroid[1], self.ground_truth_obj.angle
-        sensor_poses = []
+        actual_poses = []
+        believed_poses = []
 
         for sensor_obj in self.sensors:
-            # Use the sensor's original extrinsics combined with any injected errors
-            sensor_x_rel = sensor_obj.x_extrinsics_original + sensor_obj.x_offset_error
-            sensor_y_rel = sensor_obj.y_extrinsics_original + sensor_obj.y_offset_error
-            sensor_yaw_rel = sensor_obj.angle_extrinsics_original + sensor_obj.angle_offset_error
+            # ACTUAL position: TRUE ego pose + actual extrinsics (with calibration errors)
+            # This is where the sensor PHYSICALLY is
+            actual_x_rel = sensor_obj.x_extrinsics_original + sensor_obj.x_offset_error
+            actual_y_rel = sensor_obj.y_extrinsics_original + sensor_obj.y_offset_error
+            actual_yaw_rel = sensor_obj.angle_extrinsics_original + sensor_obj.angle_offset_error
 
-            # Calculate the sensor's absolute position
-            sensor_x = cav_x + sensor_x_rel * math.cos(cav_yaw) - sensor_y_rel * math.sin(cav_yaw)
-            sensor_y = cav_y + sensor_x_rel * math.sin(cav_yaw) + sensor_y_rel * math.cos(cav_yaw)
-            sensor_yaw = cav_yaw + sensor_yaw_rel
+            actual_sensor_x = true_x + actual_x_rel * math.cos(true_yaw) - actual_y_rel * math.sin(true_yaw)
+            actual_sensor_y = true_y + actual_x_rel * math.sin(true_yaw) + actual_y_rel * math.cos(true_yaw)
+            actual_sensor_yaw = true_yaw + actual_yaw_rel
+            actual_poses.append((actual_sensor_x, actual_sensor_y, actual_sensor_yaw))
 
-            sensor_poses.append((sensor_x, sensor_y, sensor_yaw))
-            # print(f"  SensorPackage {self.sensor_package_id} Sensor {sensor_obj.sensor_type_id} actual pose: (x={sensor_x:.2f}, y={sensor_y:.2f}, yaw={math.degrees(sensor_yaw):.2f} deg)") # Debugging print
+            # BELIEVED position: BELIEVED ego pose + original extrinsics (no calibration errors)
+            # This is where the software THINKS the sensor is
+            believed_x_rel = sensor_obj.x_extrinsics_original
+            believed_y_rel = sensor_obj.y_extrinsics_original
+            believed_yaw_rel = sensor_obj.angle_extrinsics_original
 
-        return sensor_poses
+            believed_sensor_x = believed_x + believed_x_rel * math.cos(believed_yaw) - believed_y_rel * math.sin(believed_yaw)
+            believed_sensor_y = believed_y + believed_x_rel * math.sin(believed_yaw) + believed_y_rel * math.cos(believed_yaw)
+            believed_sensor_yaw = believed_yaw + believed_yaw_rel
+            believed_poses.append((believed_sensor_x, believed_sensor_y, believed_sensor_yaw))
+
+        return actual_poses, believed_poses
 
     def create_detection_sets(self, ego_ground_truth, ground_truth_objects, ground_truth_spatial_index, time):
         """
@@ -102,52 +135,80 @@ class SensorPackage:
         """
         self.ground_truth_obj = ego_ground_truth
 
+        # TRUE ego pose - where the vehicle actually is
+        true_ego_pose = (
+            ego_ground_truth.centroid[0],
+            ego_ground_truth.centroid[1],
+            ego_ground_truth.angle
+        )
+
         # Get the velocity of the ego vehicle
         velocity = math.sqrt(ego_ground_truth.velocity_vector[0]**2 + ego_ground_truth.velocity_vector[1]**2)
 
-        # Get the localized pose with potential errors
-        adjusted_x, adjusted_y, adjusted_yaw = self.localizer.get_localization_pose(
+        # Get the BELIEVED ego pose with potential localization errors
+        # This is where the vehicle THINKS it is (may differ from truth if has_error=True)
+        believed_x, believed_y, believed_yaw = self.localizer.get_localization_pose(
             ego_ground_truth.centroid[0],
             ego_ground_truth.centroid[1],
             ego_ground_truth.angle,
-            velocity
+            velocity,
+            has_error=self.has_error
         )
+        believed_ego_pose = (believed_x, believed_y, believed_yaw)
 
-        # Update the ego vehicle's position and angle
-        self.ground_truth_obj.centroid = [adjusted_x, adjusted_y]
-        self.ground_truth_obj.angle = adjusted_yaw
+        # Calculate sensor poses using both true and believed ego poses
+        # - actual_poses: where sensors physically are (for measurement)
+        # - believed_poses: where software thinks sensors are (for transform back)
+        actual_poses, believed_poses = self.set_sensor_poses(true_ego_pose, believed_ego_pose)
 
-        sensor_poses = self.set_sensor_poses()
+        # GET LOCALIZATION COVARIANCE (GPEM Section VII-A)
+        # Combine localization uncertainty with perception uncertainty
+        loc_covariance = self.localizer.get_localization_covariance(velocity, believed_yaw)
 
         self.sensor_detection_sets = []
         all_sensors_detected_ground_truths = [] # Collect all detected GT from all sensors
         all_sensors_detected_objects = [] # Collect all detected objects from all sensors
         detectable_ground_truth = {} # Initialize once per frame for the entire SensorPackage
 
-        for sensor_obj, sensor_pose in zip(self.sensors, sensor_poses):
+        for sensor_obj, actual_pose, believed_pose in zip(self.sensors, actual_poses, believed_poses):
             # Filter ground truth by range so that we don't do unnecessary calculations
             # Use spatial index if available for much faster filtering
+            # Use ACTUAL pose for filtering (what the sensor can physically see)
             if ground_truth_spatial_index is not None:
                 ground_truth_objects_filtered = ground_truth.filter_ground_truth_by_range_indexed(
-                    ground_truth_spatial_index, ground_truth_objects, sensor_pose[0], sensor_pose[1], sensor_obj.max_range)
+                    ground_truth_spatial_index, ground_truth_objects, actual_pose[0], actual_pose[1], sensor_obj.max_range)
             else:
                 # Fallback to linear search if spatial index is not available
-                ground_truth_objects_filtered = ground_truth.filter_ground_truth_by_range(ground_truth_objects, sensor_pose[0], sensor_pose[1], sensor_obj.max_range)
+                ground_truth_objects_filtered = ground_truth.filter_ground_truth_by_range(ground_truth_objects, actual_pose[0], actual_pose[1], sensor_obj.max_range)
 
-            # Create detected objects
-            detected_objects, detected_ground_truths = sensor.create_detected_bounding_boxes(sensor_obj, sensor_pose, ground_truth_objects_filtered, self.sensor_package_id)
-            # print(f"  Sensor {sensor_obj.sensor_type_id}: Detected ground truths count: {len(detected_ground_truths)}") # Debugging print
-
+            # Create detected objects - pass both actual and believed poses for proper extrinsics error simulation
+            detected_objects, detected_ground_truths = sensor.create_detected_bounding_boxes(
+                sensor_obj, actual_pose, believed_pose, ground_truth_objects_filtered, self.sensor_package_id)
+            
+            # ADD LOCALIZATION COVARIANCE TO PERCEPTION COVARIANCE (Eq 18: Σ_total = Σ_loc + Σ_perc)
+            for det in detected_objects:
+                if det.error_covariance is not None:
+                    # Equation 18 in the paper: Add the two matrices
+                    det.error_covariance = det.error_covariance + loc_covariance
+            
             all_sensors_detected_ground_truths.extend(detected_ground_truths) # Collect for merging
             all_sensors_detected_objects.extend(detected_objects) # Collect for merging
 
-            # Inject malicious removal, addition, or convoy errors if applicable
-            if self.error.error_type == ErrorType.MALICIOUS_REMOVAL:
-                detected_objects = self.error.inject_error(detected_objects, True)
-            elif self.error.error_type == ErrorType.MALICIOUS_ADDITION:
-                detected_objects = self.error.inject_error(detected_objects, True)
-            elif self.error.error_type == ErrorType.MALICIOUS_CONVOY:
-                detected_objects = self.error.inject_error(detected_objects, True)
+            # Inject detection-level errors if this CAV has errors
+            if self.has_error and self.error.is_active:
+                if self.error.error_type == ErrorType.MALICIOUS_REMOVAL:
+                    detected_objects = self.error.inject_malicious_removal_error(detected_objects)
+                elif self.error.error_type == ErrorType.MALICIOUS_ADDITION:
+                    detected_objects = self.error.inject_malicious_addition_error(detected_objects)
+                elif self.error.error_type == ErrorType.MALICIOUS_CONVOY:
+                    detected_objects = self.error.inject_malicious_convoy_error(detected_objects)
+                elif self.error.error_type == ErrorType.HIGH_MISS_RATE:
+                    detected_objects = self.error.inject_high_miss_rate_error(detected_objects)
+                elif self.error.error_type == ErrorType.DETECTION_LAG:
+                    # Lag requires current step - convert time to step (assuming 0.1s per step)
+                    current_step = int(time * 10)
+                    detected_objects = self.error.inject_detection_lag_error(
+                        detected_objects, self.sensor_package_id, current_step)
 
             self.sensor_detection_sets.append(detected_objects)
 
@@ -163,12 +224,70 @@ class SensorPackage:
         # Filter out ego vehicle from the overall detected objects for metrics
         final_detected_objects_for_metrics = [obj for obj in all_sensors_detected_objects if obj.vehicle_id != self.sensor_package_id]
 
+        # ADD SELF-LOCALIZATION TO SHARED DETECTIONS
+        # This allows other CAVs to benefit from our accurate localized position
+        # The self-localization uses localizer covariance (NOT detector covariance)
+        self_localization_detection = self._create_self_localization_detection(
+            ego_ground_truth, believed_ego_pose, velocity, loc_covariance
+        )
+        if self_localization_detection is not None:
+            final_detected_objects_for_metrics.append(self_localization_detection)
+
         self.detection_set_timestamp = time
 
         # Kick off the actual fusion process
         result, visualization, _, _ = self.sensor_fusion.fuseDetectionFrame(time)
 
         return result, final_detected_objects_for_metrics, detectable_ground_truth
+
+    def _create_self_localization_detection(self, ego_ground_truth, believed_ego_pose, velocity, loc_covariance):
+        """
+        Create a DetectedObject representing this CAV's own localized position.
+        
+        This detection uses ONLY localizer covariance (no detector covariance added).
+        When shared to global fusion, other CAVs can use our accurate self-reported
+        position, which is especially valuable at high CAV penetration rates.
+        
+        Args:
+            ego_ground_truth (GroundTruthObject): Ground truth for the ego vehicle.
+            believed_ego_pose (tuple): The believed (localized) pose (x, y, yaw).
+            velocity (float): Current velocity in m/s.
+            loc_covariance (np.ndarray): 2x2 localizer covariance matrix.
+            
+        Returns:
+            DetectedObject: Self-localization detection with localizer covariance,
+                           or None if unable to create.
+        """
+        import gaussians
+        
+        believed_x, believed_y, believed_yaw = believed_ego_pose
+        
+        # Get localizer standard deviations for the Gaussian
+        loc_long_std = self.localizer.get_longitudinal_localization_std(velocity)
+        loc_lat_std = self.localizer.get_lateral_localization_std(velocity)
+        
+        # Create the expected error Gaussian with localizer uncertainty
+        # (oriented along the vehicle heading)
+        loc_gaussian = gaussians.BivariateGaussian(loc_long_std**2, loc_lat_std**2, believed_yaw)
+        
+        # Create the DetectedObject for self-localization
+        # Use the believed (localized) position, NOT ground truth
+        self_detection = sensor.DetectedObject(
+            vehicle_id=self.sensor_package_id,
+            vehicle_type=ego_ground_truth.type,
+            detected_bbox=None,  # No bbox from localization
+            centroid=(believed_x, believed_y),
+            width=ego_ground_truth.dimensions[0],
+            length=ego_ground_truth.dimensions[1],
+            angle=believed_yaw,
+            expected_error_gaussian=loc_gaussian,
+            velocity_vector=ego_ground_truth.velocity_vector,
+            error_covariance=loc_covariance,  # Pure localizer covariance, no detector added
+            width_std=0.1,  # Low uncertainty on own dimensions
+            length_std=0.1
+        )
+        
+        return self_detection
 
     def draw_detected_objects(self, traci_instance, polygon_ids):
         """

@@ -24,8 +24,9 @@ class BivariateGaussian:
             self.covariance = np.array([[a, 0], [0, b]])
 
             # RΣR^T to rotate the ellipse where Σ is the original covariance matrix
-            rotate = np.array([[math.cos(phi), math.sin(phi)],
-                               [-math.sin(phi), math.cos(phi)]])
+            # Uses standard rotation matrix R(phi) = [[cos, -sin], [sin, cos]]
+            rotate = np.array([[math.cos(phi), -math.sin(phi)],
+                               [math.sin(phi), math.cos(phi)]])
             self.covariance = np.matmul(rotate, self.covariance)
             self.covariance = np.matmul(self.covariance, rotate.transpose())
         else:

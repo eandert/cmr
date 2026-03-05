@@ -18,14 +18,16 @@ sumoCmd = [
 ]
 traci.start(sumoCmd)
 
-# Define some sensor detector combos
+# Define some sensor detector combos (max_range=70m for regression model range)
 os1_pointpillars = sensor.Sensor(
                 sensor_type=sensor_type.SensorType.OS1_128,
-                detector_type=detector_type.DetectorType.POINT_PILLARS
+                detector_type=detector_type.DetectorType.POINTPILLARS_KITTI,
+                detector_max_range=70.0
             )
-camera_yolo = sensor.Sensor(
+camera_detr3d = sensor.Sensor(
                 sensor_type=sensor_type.SensorType.CAMERA,
-                detector_type=detector_type.DetectorType.YOLO
+                detector_type=detector_type.DetectorType.DETR3D,
+                detector_max_range=70.0
             )
 os1_perfect = sensor.Sensor(
                 sensor_type=sensor_type.SensorType.OS1_128,
@@ -35,7 +37,7 @@ os1_perfect = sensor.Sensor(
 # Example sensors/detector combos and their extrinsics
 sensors = [
     os1_pointpillars,
-    camera_yolo
+    camera_detr3d
 ]
 sensors_extrinsics = [
     (0.0, 0.0, 0.0),  # (x, y, yaw) relative to the CAV

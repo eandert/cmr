@@ -1,0 +1,14 @@
+# CenterPoint (lidar only) - from mmdetection3d
+# Linear model: abs_error = intercept + slope * distance
+# Quadratic model: abs_error = quad_a * d^2 + quad_b * d + quad_c
+# For covariance: std = 1.253 * abs_error (half-normal to std conversion)
+
+error_type,intercept,slope,quad_a,quad_b,quad_c,unit,notes
+radial,0.033959,0.003401,-1.368963e-05,0.004159208,0.02590164,meters,Range error
+lateral,0.068311,0.002762,1.424854e-05,0.001973425,0.07669711,meters,Cross-range error
+vertical,0.037665,0.002469,6.084055e-07,0.002435695,0.03802281,meters,Elevation error
+yaw,0.143365,-0.001534,4.677049e-05,-0.004123582,0.1708927,radians,Heading angle
+width,0.119289,0.00579,1.179002e-05,0.005137101,0.1262277,meters,Box width
+length,0.089974,0.001185,-3.492296e-06,0.001378088,0.08791906,meters,Box length
+box_height,0.069739,0.002098,7.127187e-07,0.002058271,0.07015834,meters,Box height
+miss_rate,0.139875,0.009674,6.298688e-05,0.00460102,0.2136383,probability,Miss rate

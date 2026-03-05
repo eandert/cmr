@@ -1,0 +1,16 @@
+# PointPillars OS1_128 LiDAR Sensor Error Model
+# Generated from regression testing
+#
+# Format: error_type,intercept,slope,unit,notes
+# Linear model: abs_error = intercept + slope * distance
+# For covariance: std = 1.253 * abs_error (half-normal to std conversion)
+
+error_type,intercept,slope,unit,notes
+radial,0.014547,0.000788,meters,Range error towards/away from sensor
+lateral,0.023388,0.000279,meters,Cross-range error left/right in ground plane
+vertical,0.013141,0.000563,meters,Elevation error up/down
+yaw,0.045834,-0.000485,radians,Heading angle error
+width,0.016275,0.000228,meters,Box width dimension error
+length,0.034834,0.000969,meters,Box length dimension error
+box_height,0.022837,0.000211,meters,Box height dimension error
+miss_rate,0.487947,0.002430,probability,Probability of NOT detecting (inverted from regression)

@@ -7,6 +7,9 @@ from scipy.spatial import cKDTree
 # These properties (type, length, width) don't change during simulation
 _vehicle_static_cache = {}
 
+# Cache for traffic light positions (they never move)
+_traffic_light_position_cache = {}
+
 def clear_vehicle_static_cache():
     """
     Clear the vehicle static properties cache.
@@ -29,6 +32,13 @@ def cleanup_vehicle_cache(active_vehicle_ids):
     keys_to_remove = [veh_id for veh_id in _vehicle_static_cache.keys() if veh_id not in active_set]
     for veh_id in keys_to_remove:
         del _vehicle_static_cache[veh_id]
+
+
+def clear_traffic_light_cache():
+    """Clear the traffic light position cache."""
+    global _traffic_light_position_cache
+    _traffic_light_position_cache.clear()
+
 
 class GroundTruthObject:
     def __init__(self, vehicle_id, vehicle_type, position, velocity_vector, bounding_box, angle_rad, width, length):
@@ -85,32 +95,104 @@ class GroundTruthObject:
             polygon_id_prefix (str): Prefix to make the polygon ID unique across different types of visualizations.
         """
         cx, cy = self.centroid
-        angle_rad = self.angle - math.pi / 2  # Adjusting the angle by -90 degrees
+        angle_rad = self.angle # Already in standard math convention
         vehicle_length = self.dimensions[1] # Get vehicle length
 
-        # Offset cx, cy forward by half vehicle length
-        cx_offset = cx + (vehicle_length / 2) * math.cos(angle_rad)
-        cy_offset = cy + (vehicle_length / 2) * math.sin(angle_rad)
-
-        # Offset end_x, end_y backward by half vehicle length
-        end_x = cx_offset - length * math.cos(angle_rad)
-        end_y = cy_offset - length * math.sin(angle_rad)
+        # Start from the center
+        # end point is forward in the direction of heading
+        end_x = cx + length * math.cos(angle_rad)
+        end_y = cy + length * math.sin(angle_rad)
 
         # Draw the position vector as a thin polygon in SUMO
         polygon_vector_id = f"vector_{polygon_id_prefix}_{self.vehicle_id}"
         traci_instance.polygon.add(
             polygonID=polygon_vector_id,
-            shape=[(cx_offset, cy_offset), (end_x, end_y)], # Use the offset start point
+            shape=[(cx, cy), (end_x, end_y)],
             color=color,
             fill=False,
             layer=layer
         )
         return polygon_vector_id
 
+
+def setup_vehicle_subscriptions(traci_instance):
+    """
+    Set up TraCI subscriptions for efficient batched vehicle data retrieval.
+    Call this once at simulation start.
+    """
+    import traci.constants as tc
+    # Subscribe to simulation-level vehicle ID list
+    traci_instance.simulation.subscribe([tc.VAR_DEPARTED_VEHICLES_IDS, tc.VAR_ARRIVED_VEHICLES_IDS])
+
+
+def subscribe_to_vehicle(traci_instance, veh_id):
+    """
+    Subscribe to a vehicle's dynamic properties for efficient retrieval.
+    """
+    import traci.constants as tc
+    traci_instance.vehicle.subscribe(veh_id, [
+        tc.VAR_POSITION,
+        tc.VAR_SPEED,
+        tc.VAR_ANGLE,
+        tc.VAR_LENGTH,
+        tc.VAR_WIDTH,
+        tc.VAR_TYPE
+    ])
+
+
+def get_all_vehicle_data_batched(traci_instance, vehicle_ids):
+    """
+    Get all vehicle data using batched TraCI calls.
+    This is MUCH faster than individual getPosition/getSpeed/getAngle calls.
+    
+    Args:
+        traci_instance: The TraCI instance.
+        vehicle_ids: List of vehicle IDs.
+    
+    Returns:
+        dict: {veh_id: {'position': (x, y), 'speed': float, 'angle': float, 'length': float, 'width': float, 'type': str}}
+    """
+    import traci.constants as tc
+    
+    if not vehicle_ids:
+        return {}
+    
+    result = {}
+    
+    # Get subscription results for all vehicles
+    for veh_id in vehicle_ids:
+        try:
+            sub_results = traci_instance.vehicle.getSubscriptionResults(veh_id)
+            if sub_results:
+                result[veh_id] = {
+                    'position': sub_results.get(tc.VAR_POSITION, (0, 0)),
+                    'speed': sub_results.get(tc.VAR_SPEED, 0),
+                    'angle': sub_results.get(tc.VAR_ANGLE, 0),
+                    'length': sub_results.get(tc.VAR_LENGTH, 5),
+                    'width': sub_results.get(tc.VAR_WIDTH, 2),
+                    'type': sub_results.get(tc.VAR_TYPE, 'unknown')
+                }
+            else:
+                # Fallback to individual calls if subscription failed
+                result[veh_id] = {
+                    'position': traci_instance.vehicle.getPosition(veh_id),
+                    'speed': traci_instance.vehicle.getSpeed(veh_id),
+                    'angle': traci_instance.vehicle.getAngle(veh_id),
+                    'length': traci_instance.vehicle.getLength(veh_id),
+                    'width': traci_instance.vehicle.getWidth(veh_id),
+                    'type': traci_instance.vehicle.getTypeID(veh_id)
+                }
+        except Exception:
+            # Vehicle might have left simulation
+            pass
+    
+    return result
+
+
 def create_ground_truth_for_vehicle_by_id(traci_instance, veh_id):
     """
     Create ground truth data for a single vehicle ID.
-    Optimized with caching of static properties (optimization #6).
+    Optimized with caching and subscription results.
     
     Args:
         traci_instance: The TraCI instance to use for retrieving vehicle data.
@@ -119,17 +201,29 @@ def create_ground_truth_for_vehicle_by_id(traci_instance, veh_id):
     Returns:
         GroundTruthObject: An instance of GroundTruthObject.
     """
-    # Get the position of the vehicle (center of the front bumper)
-    front_bumper_position = traci_instance.vehicle.getPosition(veh_id)
+    import traci.constants as tc
     
-    # Get the speed (velocity magnitude) of the vehicle
-    speed = traci_instance.vehicle.getSpeed(veh_id)
+    # Try to get data from subscription results first (much faster)
+    sub_results = None
+    try:
+        sub_results = traci_instance.vehicle.getSubscriptionResults(veh_id)
+    except Exception:
+        pass
     
-    # Get the angle of the vehicle in degrees
-    angle_deg = traci_instance.vehicle.getAngle(veh_id)
+    if sub_results and tc.VAR_POSITION in sub_results:
+        # Use subscription data (fast path)
+        front_bumper_position = sub_results[tc.VAR_POSITION]
+        speed = sub_results.get(tc.VAR_SPEED, 0)
+        angle_deg = sub_results.get(tc.VAR_ANGLE, 0)
+    else:
+        # Fall back to individual TraCI calls (slow path)
+        front_bumper_position = traci_instance.vehicle.getPosition(veh_id)
+        speed = traci_instance.vehicle.getSpeed(veh_id)
+        angle_deg = traci_instance.vehicle.getAngle(veh_id)
     
     # Compute the velocity vector from speed and angle
-    angle_rad = math.radians(-angle_deg)
+    # Standard math angle: 0 is East, 90 is North
+    angle_rad = math.radians(90 - angle_deg)
     velocity_vector = (speed * math.cos(angle_rad), speed * math.sin(angle_rad))
     
     # Optimization #6: Cache static vehicle properties (type, length, width)
@@ -142,20 +236,21 @@ def create_ground_truth_for_vehicle_by_id(traci_instance, veh_id):
     else:
         length, width, vehicle_type = _vehicle_static_cache[veh_id]
 
-    # Optimization #6: Use vectorized operations for geometric calculations
     # Adjust the position to the center of the vehicle
+    cx, cy = front_bumper_position
+    # Note: bumper position is already provided by SUMO. 
+    # If we need center, we should offset by half length in the opposite direction of heading.
     half_length = length / 2
-    cos_angle_offset = math.cos(angle_rad + math.pi / 2)
-    sin_angle_offset = math.sin(angle_rad + math.pi / 2)
-    cx = front_bumper_position[0] - half_length * cos_angle_offset
-    cy = front_bumper_position[1] - half_length * sin_angle_offset
+    cx = front_bumper_position[0] - half_length * math.cos(angle_rad)
+    cy = front_bumper_position[1] - half_length * math.sin(angle_rad)
     
-    # Compute the global coordinates of the bounding box corners
+    # Compute the global coordinates of the bounding box corners (axis-aligned at 0 rad)
+    # At 0 radians (East), length is along x and width is along y.
     half_width = width / 2
-    bbox_x_min = cx - half_width
-    bbox_x_max = cx + half_width
-    bbox_y_min = cy - half_length
-    bbox_y_max = cy + half_length
+    bbox_x_min = cx - half_length
+    bbox_x_max = cx + half_length
+    bbox_y_min = cy - half_width
+    bbox_y_max = cy + half_width
     
     # Rotate the bounding box based on the vehicle's angle
     bbox_rotated = [
@@ -166,11 +261,47 @@ def create_ground_truth_for_vehicle_by_id(traci_instance, veh_id):
     ]
     
     # Create and return an instance of GroundTruthObject
-    return GroundTruthObject(veh_id, vehicle_type, (cx, cy), velocity_vector, bbox_rotated, angle_rad + math.pi, width, length)
+    # Use standard math angle convention
+    return GroundTruthObject(veh_id, vehicle_type, (cx, cy), velocity_vector, bbox_rotated, angle_rad, width, length)
+
+
+def create_ground_truth_from_data(veh_id, position, speed, angle_deg, length, width, vehicle_type):
+    """
+    Create ground truth from pre-fetched data (for batched operations).
+    This avoids any TraCI calls.
+    """
+    # Compute the velocity vector from speed and angle
+    # Standard math angle: 0 is East, 90 is North
+    angle_rad = math.radians(90 - angle_deg)
+    velocity_vector = (speed * math.cos(angle_rad), speed * math.sin(angle_rad))
+    
+    # Adjust the position to the center of the vehicle
+    half_length = length / 2
+    cx = position[0] - half_length * math.cos(angle_rad)
+    cy = position[1] - half_length * math.sin(angle_rad)
+    
+    # Compute the global coordinates of the bounding box corners
+    half_width = width / 2
+    bbox_x_min = cx - half_length
+    bbox_x_max = cx + half_length
+    bbox_y_min = cy - half_width
+    bbox_y_max = cy + half_width
+    
+    # Rotate the bounding box based on the vehicle's angle
+    bbox_rotated = [
+        utils.rotate_point(bbox_x_min, bbox_y_min, cx, cy, angle_rad),
+        utils.rotate_point(bbox_x_max, bbox_y_min, cx, cy, angle_rad),
+        utils.rotate_point(bbox_x_max, bbox_y_max, cx, cy, angle_rad),
+        utils.rotate_point(bbox_x_min, bbox_y_max, cx, cy, angle_rad)
+    ]
+    
+    return GroundTruthObject(veh_id, vehicle_type, (cx, cy), velocity_vector, bbox_rotated, angle_rad, width, length)
+
 
 def create_ground_truth_for_traffic_light_by_id(traci_instance, tl_id):
     """
     Create ground truth data for a single traffic light ID.
+    Optimized with position caching (traffic lights don't move).
     
     Args:
         traci_instance: The TraCI instance to use for retrieving traffic light data.
@@ -179,8 +310,14 @@ def create_ground_truth_for_traffic_light_by_id(traci_instance, tl_id):
     Returns:
         GroundTruthObject: An instance of GroundTruthObject.
     """
-    # Get the position of the traffic light
-    position = traci_instance.junction.getPosition(tl_id.replace("GS_", "", 1))
+    global _traffic_light_position_cache
+    
+    # Cache traffic light positions - they never change
+    if tl_id not in _traffic_light_position_cache:
+        position = traci_instance.junction.getPosition(tl_id.replace("GS_", "", 1))
+        _traffic_light_position_cache[tl_id] = position
+    else:
+        position = _traffic_light_position_cache[tl_id]
     
     # Traffic lights do not have speed, angle, length, width, or type
     speed = 0
@@ -202,24 +339,20 @@ def create_ground_truth_for_traffic_light_by_id(traci_instance, tl_id):
     # Create and return an instance of GroundTruthObject
     return GroundTruthObject(tl_id, vehicle_type, position, velocity_vector, bbox_rotated, angle_rad, width, length)
 
+
 def create_ground_truth_for_traffic_light_from_list(traci_instance, traffic_light_ids):
     """
-    Create ground truth data for the given vehicle IDs.
+    Create ground truth data for the given traffic light IDs.
     
     Args:
         traci_instance: The TraCI instance to use for retrieving vehicle data.
-        vehicle_ids (list): A list of vehicle IDs.
+        traffic_light_ids (list): A list of traffic light IDs.
     
     Returns:
         list: A list of GroundTruthObject instances.
     """
-    ground_truth = []
+    return [create_ground_truth_for_traffic_light_by_id(traci_instance, tl_id) for tl_id in traffic_light_ids]
 
-    # Iterate over each vehicle ID
-    for veh_id in traffic_light_ids:
-        ground_truth.append(create_ground_truth_for_traffic_light_by_id(traci_instance, veh_id))
-
-    return ground_truth
 
 def create_ground_truth_for_vehicle_from_list(traci_instance, vehicle_ids):
     """
@@ -243,6 +376,45 @@ def create_ground_truth_for_vehicle_from_list(traci_instance, vehicle_ids):
 
     return ground_truth
 
+
+def create_ground_truth_for_vehicle_from_list_batched(traci_instance, vehicle_ids):
+    """
+    Create ground truth data for vehicles using batched TraCI data.
+    This is faster when subscriptions are set up.
+    
+    Args:
+        traci_instance: The TraCI instance.
+        vehicle_ids: List of vehicle IDs.
+    
+    Returns:
+        list: List of GroundTruthObject instances.
+    """
+    if not vehicle_ids:
+        return []
+    
+    cleanup_vehicle_cache(vehicle_ids)
+    
+    # Get all vehicle data in a batch
+    all_data = get_all_vehicle_data_batched(traci_instance, vehicle_ids)
+    
+    ground_truth = []
+    for veh_id in vehicle_ids:
+        if veh_id in all_data:
+            data = all_data[veh_id]
+            gt = create_ground_truth_from_data(
+                veh_id,
+                data['position'],
+                data['speed'],
+                data['angle'],
+                data['length'],
+                data['width'],
+                data['type']
+            )
+            ground_truth.append(gt)
+    
+    return ground_truth
+
+
 def filter_ground_truth_by_range(ground_truth_objects, x, y, range):
     """
     Filter ground truth objects by their distance to a given (x, y) position.
@@ -264,6 +436,7 @@ def filter_ground_truth_by_range(ground_truth_objects, x, y, range):
             filtered_objects.append(obj)
     return filtered_objects
 
+
 def build_ground_truth_spatial_index(ground_truth_objects):
     """
     Build a spatial index (cKDTree) for fast range queries on ground truth objects.
@@ -282,6 +455,7 @@ def build_ground_truth_spatial_index(ground_truth_objects):
     positions = np.array([[gt.centroid[0], gt.centroid[1]] for gt in ground_truth_objects])
     tree = cKDTree(positions)
     return tree, ground_truth_objects
+
 
 def filter_ground_truth_by_range_indexed(spatial_index, ground_truth_objects, x, y, max_range):
     """

@@ -34,7 +34,7 @@ def calculate_ttc(ego_vehicle, lead_vehicle):
     ttc = dlong / vlong
     return ttc
 
-def calculate_ttc_violations(ego_vehicle, ground_truth_objects, ttc_threshold=1.0):
+def calculate_ttc_violations(ego_vehicle, ground_truth_objects, ttc_threshold=1.0, av_ids=None):
     """
     Calculate violations of the Time to Collision (TTC) for a given ego vehicle using ground truth data.
     
@@ -42,11 +42,15 @@ def calculate_ttc_violations(ego_vehicle, ground_truth_objects, ttc_threshold=1.
         ego_vehicle (GroundTruthObject): The ground truth object for the ego (subject) vehicle.
         ground_truth_objects (list): A list of GroundTruthObject instances representing other vehicles.
         ttc_threshold (float): The threshold for TTC violations. Defaults to 1.0 seconds.
+        av_ids (set, optional): Set of vehicle IDs that are AVs. If provided, returns split metrics.
     
     Returns:
-        int: The number of TTC violations.
+        int or tuple: If av_ids is None, returns total violations count.
+                      If av_ids is provided, returns (total, av_violations, non_av_violations).
     """
     violations = 0
+    av_violations = 0
+    non_av_violations = 0
 
     for gt_obj in ground_truth_objects:
         if gt_obj.vehicle_id == ego_vehicle.vehicle_id:
@@ -57,5 +61,12 @@ def calculate_ttc_violations(ego_vehicle, ground_truth_objects, ttc_threshold=1.
         # Check for violations
         if 0 < ttc <= ttc_threshold:
             violations += 1
+            if av_ids is not None:
+                if gt_obj.vehicle_id in av_ids:
+                    av_violations += 1
+                else:
+                    non_av_violations += 1
 
+    if av_ids is not None:
+        return violations, av_violations, non_av_violations
     return violations

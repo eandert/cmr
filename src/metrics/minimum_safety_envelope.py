@@ -7,7 +7,7 @@ CATEGORIES = {
     "Naturalistic": {"rho": 0.2, "a_accel_max": 1.80, "a_decel_min": 3.60, "a_decel_max": 6.10}
 }
 
-def calculate_mse_violations(ego_vehicle, ground_truth_objects, category="Aggressive"):
+def calculate_mse_violations(ego_vehicle, ground_truth_objects, category="Aggressive", av_ids=None):
     """
     Calculate violations of the Minimum Safety Envelope (MSE) for a given ego vehicle using ground truth data.
 
@@ -15,9 +15,11 @@ def calculate_mse_violations(ego_vehicle, ground_truth_objects, category="Aggres
         ego_vehicle (GroundTruthObject): The ground truth object for the ego (subject) vehicle.
         ground_truth_objects (list): A list of GroundTruthObject instances representing other vehicles.
         category (str): The category of driving behavior ("Aggressive", "Conservative", "Naturalistic"). Defaults to "Aggressive".
+        av_ids (set, optional): Set of vehicle IDs that are AVs. If provided, returns split metrics.
 
     Returns:
-        int: The number of MSE violations.
+        int or tuple: If av_ids is None, returns total violations count.
+                      If av_ids is provided, returns (total, av_violations, non_av_violations).
     """
     # Get the parameters for the selected category
     params = CATEGORIES[category]
@@ -29,6 +31,8 @@ def calculate_mse_violations(ego_vehicle, ground_truth_objects, category="Aggres
     subject_velocity = ego_vehicle.velocity_vector
 
     violations = 0
+    av_violations = 0
+    non_av_violations = 0
 
     for gt_obj in ground_truth_objects:
         if gt_obj.vehicle_id == ego_vehicle.vehicle_id:
@@ -57,5 +61,12 @@ def calculate_mse_violations(ego_vehicle, ground_truth_objects, category="Aggres
         # Check for violations
         if dlong < min_safe_dlong or dlat < min_safe_dlat:
             violations += 1
+            if av_ids is not None:
+                if gt_obj.vehicle_id in av_ids:
+                    av_violations += 1
+                else:
+                    non_av_violations += 1
 
+    if av_ids is not None:
+        return violations, av_violations, non_av_violations
     return violations

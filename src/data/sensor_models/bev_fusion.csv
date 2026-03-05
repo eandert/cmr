@@ -1,0 +1,14 @@
+# BEV Fusion (lidar+camera) - from mmdetection3d
+# Linear model: abs_error = intercept + slope * distance
+# Quadratic model: abs_error = quad_a * d^2 + quad_b * d + quad_c
+# For covariance: std = 1.253 * abs_error (half-normal to std conversion)
+
+error_type,intercept,slope,quad_a,quad_b,quad_c,unit,notes
+radial,0.031255,0.003281,-2.126893e-06,0.003401052,0.02996122,meters,Range error
+lateral,0.054972,0.003078,2.813999e-05,0.001495034,0.07208734,meters,Cross-range error
+vertical,0.044507,0.002025,-2.536041e-08,0.002026423,0.04449204,meters,Elevation error
+yaw,0.151646,-0.001857,3.852989e-05,-0.004024932,0.1750806,radians,Heading angle
+width,0.110036,0.006444,5.193609e-05,0.003522338,0.1416244,meters,Box width
+length,0.090775,0.001145,1.143157e-05,0.0005022664,0.09772807,meters,Box length
+box_height,0.071002,0.002021,1.682555e-05,0.001074854,0.0812362,meters,Box height
+miss_rate,0.108322,0.009351,9.827445e-05,0.001435237,0.2234099,probability,Miss rate
