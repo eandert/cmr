@@ -230,10 +230,11 @@ while traci.simulation.getMinExpectedNumber() > 0:
 
         # Calculate AMOTA using unique detectable ground truth
         amota_score = amota.calculate_amota(global_detection_result, all_detectable_ground_truth)
-        print(f"AMOTA Score: {amota_score:.4f}")
+        print(f"AMOTA Score: {amota_score}")
 
         # Add the AMOTA score to the global metrics here because we only want it one time
-        total_global_metrics["amota"] += amota_score
+        if amota_score is not None:
+            total_global_metrics["amota"] += amota_score
 
         # Calculate violations for the global fusion for each CAV
         for cav_id in cav_id_list:

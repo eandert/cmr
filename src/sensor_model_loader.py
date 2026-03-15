@@ -36,11 +36,28 @@ class RegressionParams:
     quad_a: Optional[float] = None
     quad_b: Optional[float] = None
     quad_c: Optional[float] = None
-    
+    # Bias (signed error) regression: bias = bias_intercept + bias_slope * d
+    bias_intercept: Optional[float] = None
+    bias_slope: Optional[float] = None
+    # Bias quadratic: bias = bias_quad_a * d^2 + bias_quad_b * d + bias_quad_c
+    bias_quad_a: Optional[float] = None
+    bias_quad_b: Optional[float] = None
+    bias_quad_c: Optional[float] = None
+
     @property
     def has_quadratic(self) -> bool:
         """Check if quadratic coefficients are available."""
         return self.quad_a is not None and self.quad_b is not None and self.quad_c is not None
+
+    @property
+    def has_bias(self) -> bool:
+        """Check if bias regression coefficients are available."""
+        return self.bias_intercept is not None and self.bias_slope is not None
+
+    @property
+    def has_bias_quadratic(self) -> bool:
+        """Check if bias quadratic coefficients are available."""
+        return self.bias_quad_a is not None and self.bias_quad_b is not None and self.bias_quad_c is not None
     
     def predict_linear(self, distance: float) -> float:
         """Predict absolute error using linear model."""
@@ -66,6 +83,14 @@ class RegressionParams:
     def predict_std(self, distance: float, mae_to_std: float = 1.2533141373, use_quadratic: bool = False) -> float:
         """Predict standard deviation at the given distance."""
         return self.predict(distance, use_quadratic=use_quadratic) * mae_to_std
+
+    def predict_bias(self, distance: float, use_quadratic: bool = False) -> float:
+        """Predict signed bias at the given distance. Returns 0 if no bias regression."""
+        if not self.has_bias:
+            return 0.0
+        if use_quadratic and self.has_bias_quadratic:
+            return self.bias_quad_a * distance**2 + self.bias_quad_b * distance + self.bias_quad_c
+        return self.bias_intercept + self.bias_slope * distance
 
 
 @dataclass
@@ -165,7 +190,28 @@ def load_sensor_model_csv(file_path: str) -> SensorModelData:
                     quad_c = float(row['quad_c'])
                 except (ValueError, KeyError):
                     pass
-            
+
+            # Parse bias regression coefficients (optional)
+            bias_intercept = None
+            bias_slope = None
+            if 'bias_intercept' in row and row['bias_intercept'].strip():
+                try:
+                    bias_intercept = float(row['bias_intercept'])
+                    bias_slope = float(row['bias_slope'])
+                except (ValueError, KeyError):
+                    pass
+
+            bias_quad_a = None
+            bias_quad_b = None
+            bias_quad_c = None
+            if 'bias_quad_a' in row and row.get('bias_quad_a', '').strip():
+                try:
+                    bias_quad_a = float(row['bias_quad_a'])
+                    bias_quad_b = float(row['bias_quad_b'])
+                    bias_quad_c = float(row['bias_quad_c'])
+                except (ValueError, KeyError):
+                    pass
+
             params[error_type] = RegressionParams(
                 error_type=error_type,
                 intercept=float(row['intercept']),
@@ -175,6 +221,11 @@ def load_sensor_model_csv(file_path: str) -> SensorModelData:
                 quad_a=quad_a,
                 quad_b=quad_b,
                 quad_c=quad_c,
+                bias_intercept=bias_intercept,
+                bias_slope=bias_slope,
+                bias_quad_a=bias_quad_a,
+                bias_quad_b=bias_quad_b,
+                bias_quad_c=bias_quad_c,
             )
     
     name = Path(file_path).stem

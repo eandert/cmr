@@ -1,0 +1,13 @@
+# kiss_icp_noisy Localization - Imported from binned evaluation results
+# Regressions fit on bin stds directly (std-from-bins method)
+# Linear model: std = intercept + slope * velocity
+# Quadratic model: std = quad_c + quad_b*v + quad_a*v^2
+# velocity in m/s, position errors in meters, orientation errors in radians
+
+error_type,intercept,slope,quad_a,quad_b,quad_c,unit,notes
+longitudinal,0.3132300820051654,-0.0007444715208837643,-0.00022124789356295612,0.004122982137501258,0.29530900262656606,meters,Longitudinal (forward) position error
+lateral,0.3117622427768817,-0.0003897568556026072,2.6887228076530124e-05,-0.0009812758732862567,0.31394010825108043,meters,Lateral (side) position error
+vertical,0.23795806253361906,0.00016390009815505862,0.00010139070837774018,-0.002066695486155231,0.246170709912216,meters,Vertical (up/down) position error
+roll,0.003491658446919071,-4.6106604245743714e-05,-5.910103780382737e-06,8.391567892267665e-05,0.003012940040708069,radians,Roll angle error
+pitch,0.0036270962634617817,-7.495709530565873e-05,-7.887459923464635e-06,9.856702301056351e-05,0.002988212009661143,radians,Pitch angle error
+yaw,0.0011643323214556509,-1.4280932844145934e-05,-2.8919786518356338e-06,4.934259749623808e-05,0.0009300820506569639,radians,Yaw angle error

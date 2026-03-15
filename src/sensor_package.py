@@ -221,6 +221,10 @@ class SensorPackage:
             if gt.vehicle_id != self.sensor_package_id:
                 detectable_ground_truth[gt.vehicle_id] = gt
 
+        # Include ego's own GT since self-localization always produces a detection
+        # Without this, self-localization detections in the global tracker have no matching GT
+        detectable_ground_truth[self.sensor_package_id] = ego_ground_truth
+
         # Filter out ego vehicle from the overall detected objects for metrics
         final_detected_objects_for_metrics = [obj for obj in all_sensors_detected_objects if obj.vehicle_id != self.sensor_package_id]
 

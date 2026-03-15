@@ -1,14 +1,16 @@
 # DETR3D (camera only) - from mmdetection3d
 # Linear model: abs_error = intercept + slope * distance
 # Quadratic model: abs_error = quad_a * d^2 + quad_b * d + quad_c
+# Bias linear: signed_bias = bias_intercept + bias_slope * distance
+# Bias quadratic: signed_bias = bias_quad_a * d^2 + bias_quad_b * d + bias_quad_c
 # For covariance: std = 1.253 * abs_error (half-normal to std conversion)
 
-error_type,intercept,slope,quad_a,quad_b,quad_c,unit,notes
-radial,0.106375,0.003609,-3.063803e-05,0.005224901,0.09033978,meters,Range error
-lateral,0.165783,0.004688,-6.304254e-05,0.008013156,0.1327883,meters,Cross-range error
-vertical,0.04415,0.000972,2.154038e-06,0.0008584309,0.04527704,meters,Elevation error
-yaw,0.107447,-0.000927,6.685043e-05,-0.004452792,0.1424347,radians,Heading angle
-width,0.197332,0.005389,6.967419e-05,0.001713782,0.2337981,meters,Box width
-length,0.104303,0.000949,1.187528e-05,0.0003222848,0.1105181,meters,Box length
-box_height,0.082538,0.001208,1.795168e-05,0.0002610933,0.09193392,meters,Box height
-miss_rate,0.491089,0.006679,-2.518064e-05,0.008706697,0.4616004,probability,Miss rate
+error_type,intercept,slope,quad_a,quad_b,quad_c,bias_intercept,bias_slope,bias_quad_a,bias_quad_b,bias_quad_c,unit,notes
+radial,0.19759,0.005559,-0.0001192716,0.01185013,0.1351656,0.014047,-0.000385,-5.714846e-05,0.002628893,-0.01586288,meters,Range error
+lateral,0.057968,0.002977,4.727327e-05,0.0004833976,0.08271021,0.0065,-0.000185,6.064525e-06,-0.0005045599,0.009673693,meters,Cross-range error
+vertical,0.04415,0.000972,2.154038e-06,0.0008584309,0.04527704,0.003183,-0.000203,2.197362e-06,-0.0003186895,0.004333274,meters,Elevation error
+yaw,0.107447,-0.000927,6.685043e-05,-0.004452792,0.1424347,0.004286,-0.000144,-3.45182e-06,3.796494e-05,0.002479338,radians,Heading angle
+width,0.197332,0.005389,6.967419e-05,0.001713782,0.2337981,0.033696,-0.001007,-6.260516e-06,-0.0006765311,0.03041926,meters,Box width
+length,0.104303,0.000949,1.187528e-05,0.0003222848,0.1105181,0.020089,0.000126,1.836981e-05,-0.0008428452,0.02970361,meters,Box length
+box_height,0.082538,0.001208,1.795168e-05,0.0002610933,0.09193392,0.008921,-0.000472,2.204072e-05,-0.001634702,0.02045645,meters,Box height
+miss_rate,0.491089,0.006679,-2.518064e-05,0.008706697,0.4616004,,,,,,probability,Miss rate

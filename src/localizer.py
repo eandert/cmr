@@ -13,12 +13,16 @@ SENSOR_MODELS_DIR = Path(__file__).parent / "data" / "sensor_models"
 LOCALIZER_MODELS = {
     "kiss_icp": "kiss_icp",
     "KISS_ICP": "kiss_icp",
-    "orb_slam3": "orb_slam3",
-    "ORB_SLAM3": "orb_slam3",
+    "kiss_icp_noisy": "kiss_icp_noisy",
+    "KISS_ICP_NOISY": "kiss_icp_noisy",
+    "orb_slam3": "kiss_icp_noisy",       # Placeholder: use noisy KISS-ICP until real ORB-SLAM3 data available
+    "ORB_SLAM3": "kiss_icp_noisy",       # Placeholder: use noisy KISS-ICP until real ORB-SLAM3 data available
     "stereo_vo": "stereo_vo",
     "STEREO_VO": "stereo_vo",
-    "CT_ICP": "kiss_icp",  # Use kiss_icp as proxy for CT_ICP (similar lidar-based)
+    "CT_ICP": "kiss_icp",                # Use kiss_icp as proxy for CT_ICP (similar lidar-based)
     "ct_icp": "kiss_icp",
+    "kiss_icp_accurate": "kiss_icp",     # kiss_icp IS the accurate cross-seq data now
+    "orb_slam3_accurate": "kiss_icp_noisy",  # Placeholder: use noisy KISS-ICP until real ORB-SLAM3 data available
 }
 
 # MAE to standard deviation conversion factor (half-normal distribution)
@@ -153,7 +157,7 @@ def load_localizer_model(localizer_type: str) -> dict:
             result['lateral_linear'] = (intercept, slope)
             if quad_a is not None:
                 result['lateral_quadratic'] = (quad_c, quad_b, quad_a)  # c, b, a for polynomial
-        elif error_type == 'radial':
+        elif error_type in ('radial', 'longitudinal'):
             result['longitudinal_linear'] = (intercept, slope)
             if quad_a is not None:
                 result['longitudinal_quadratic'] = (quad_c, quad_b, quad_a)
@@ -281,12 +285,66 @@ class Localizer:
         self.use_gpem_model = use_gpem_model
         self.use_quadratic = use_quadratic
         self.localizer_type = localizer_type
-        
-        # Velocity-binned distributions
+
+        # Instance-level MAE→STD factor (overridden to 1.0 when std-from-bins is used)
+        self.mae_to_std = MAE_TO_STD
+
+        # Velocity-binned distributions (support both 'longitudinal' and 'radial' naming)
         self.velocity_bins = velocity_bins or {}
         self.lateral_bins = self.velocity_bins.get('lateral', [])
-        self.longitudinal_bins = self.velocity_bins.get('radial', [])  # 'radial' in CSV = longitudinal
+        self.longitudinal_bins = (self.velocity_bins.get('longitudinal', [])
+                                  or self.velocity_bins.get('radial', []))
+
+        # Refit regressions from bin stds if bins are available
+        if self.lateral_bins or self.longitudinal_bins:
+            self._refit_regressions_from_bins()
     
+    def _refit_regressions_from_bins(self):
+        """
+        Refit regression coefficients to predict std directly from velocity bin stds.
+
+        Instead of: MAE = intercept + slope * v → std = MAE * 1.2533
+        We now do:  std = intercept + slope * v (fitted on per-bin get_std() values)
+
+        This eliminates the MAE→std conversion factor assumption.
+        """
+        self.mae_to_std = 1.0
+
+        if self.longitudinal_bins:
+            vel, std = self._bins_to_velocity_std(self.longitudinal_bins)
+            if len(vel) >= 2:
+                lin = np.polyfit(vel, std, 1)  # [slope, intercept]
+                self.longitudinal_error_polynomial = utils.Polynomial([float(lin[1]), float(lin[0])])
+                if len(vel) >= 3:
+                    quad = np.polyfit(vel, std, 2)  # [a, b, c]
+                    self.longitudinal_error_polynomial_quad = utils.Polynomial(
+                        [float(quad[2]), float(quad[1]), float(quad[0])])
+
+        if self.lateral_bins:
+            vel, std = self._bins_to_velocity_std(self.lateral_bins)
+            if len(vel) >= 2:
+                lin = np.polyfit(vel, std, 1)
+                self.lateral_error_polynomial = utils.Polynomial([float(lin[1]), float(lin[0])])
+                if len(vel) >= 3:
+                    quad = np.polyfit(vel, std, 2)
+                    self.lateral_error_polynomial_quad = utils.Polynomial(
+                        [float(quad[2]), float(quad[1]), float(quad[0])])
+
+    @staticmethod
+    def _bins_to_velocity_std(bins):
+        """Extract (velocity_centers, stds) arrays from velocity bins, filtering overall bins."""
+        velocities = []
+        stds = []
+        for b in bins:
+            if (b.max_vel - b.min_vel) > 10:  # Skip "overall" bins
+                continue
+            center = (b.min_vel + b.max_vel) / 2.0
+            s = b.get_std()
+            if s > 0:
+                velocities.append(center)
+                stds.append(s)
+        return np.array(velocities), np.array(stds)
+
     def _find_bin(self, bins: List[VelocityBin], velocity: float) -> Optional[VelocityBin]:
         """
         Find the appropriate bin for a given velocity with clamping.
@@ -332,7 +390,7 @@ class Localizer:
             return bin_obj.get_std()
         # Fallback to polynomial
         mae = abs(fallback_polynomial.evaluate(velocity))
-        return max(0.001, mae * MAE_TO_STD)
+        return max(0.001, mae * self.mae_to_std)
     
     def _sample_from_bin(self, bins: List[VelocityBin], velocity: float, fallback_polynomial) -> float:
         """Sample error from velocity bin, with fallback to polynomial."""
@@ -343,7 +401,7 @@ class Localizer:
             return np.random.normal(0, bin_obj.get_std())
         # Fallback to polynomial-derived std
         mae = abs(fallback_polynomial.evaluate(velocity))
-        std = max(0.001, mae * MAE_TO_STD)
+        std = max(0.001, mae * self.mae_to_std)
         return np.random.normal(0, std)
         
     def lateral_error_at_velocity(self, velocity, use_quadratic=None):
@@ -379,7 +437,7 @@ class Localizer:
         if self.use_gpem_model:
             # Use regression for covariance estimation (same as detector)
             abs_error = abs(self.lateral_error_at_velocity(velocity))
-            return max(0.001, abs_error * MAE_TO_STD)
+            return max(0.001, abs_error * self.mae_to_std)
         else:
             return self._get_lateral_std_average()
     
@@ -398,7 +456,7 @@ class Localizer:
         if self.use_gpem_model:
             # Use regression for covariance estimation (same as detector)
             abs_error = abs(self.longitudinal_error_at_velocity(velocity))
-            return max(0.001, abs_error * MAE_TO_STD)
+            return max(0.001, abs_error * self.mae_to_std)
         else:
             return self._get_longitudinal_std_average()
     
@@ -426,23 +484,29 @@ class Localizer:
         """
         Get the average standard deviation for lateral localization error.
         Used by static covariance model (no velocity prediction).
-        Uses bin at 15 m/s if available, otherwise polynomial.
+        Averages variance across all specific bins, then sqrt (Jensen's inequality fix).
         """
         if self.lateral_bins:
-            return self._get_bin_std(self.lateral_bins, 15.0, self.lateral_error_polynomial)
+            variances = [b.get_std()**2 for b in self.lateral_bins
+                         if (b.max_vel - b.min_vel) <= 10]
+            if variances:
+                return np.sqrt(np.mean(variances))
         mae = abs(self.lateral_error_polynomial.evaluate(15.0))
-        return max(0.001, mae * MAE_TO_STD)
-    
+        return max(0.001, mae * self.mae_to_std)
+
     def _get_longitudinal_std_average(self) -> float:
         """
         Get the average standard deviation for longitudinal localization error.
         Used by static covariance model (no velocity prediction).
-        Uses bin at 15 m/s if available, otherwise polynomial.
+        Averages variance across all specific bins, then sqrt (Jensen's inequality fix).
         """
         if self.longitudinal_bins:
-            return self._get_bin_std(self.longitudinal_bins, 15.0, self.longitudinal_error_polynomial)
+            variances = [b.get_std()**2 for b in self.longitudinal_bins
+                         if (b.max_vel - b.min_vel) <= 10]
+            if variances:
+                return np.sqrt(np.mean(variances))
         mae = abs(self.longitudinal_error_polynomial.evaluate(15.0))
-        return max(0.001, mae * MAE_TO_STD)
+        return max(0.001, mae * self.mae_to_std)
 
     def sample_lateral_error(self, velocity: float) -> float:
         """

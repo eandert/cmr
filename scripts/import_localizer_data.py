@@ -11,7 +11,7 @@ Usage:
     
 Example:
     python import_localizer_data.py \
-        /home/rave/test/localization_project/evaluation_results/kiss_icp_best/kiss_icp_best_all_raw_errors_6dof.csv \
+        ~/test/localization_project/evaluation_results/kiss_icp_best/kiss_icp_best_all_raw_errors_6dof.csv \
         kiss_icp
 """
 

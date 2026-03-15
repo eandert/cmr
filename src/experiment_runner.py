@@ -168,7 +168,7 @@ class ExperimentConfig:
     config: Dict[str, Any]
     description: str = ""
     # When set, one simulation run produces three synced outputs (static, gpem_linear, gpem_quadratic)
-    triple_fusion_output_names: Optional[List[str]] = None  # e.g. ["static_cov_av_10pct", "gpem_linear_av_10pct", "gpem_quadratic_av_10pct"]
+    triple_fusion_output_names: Optional[List[str]] = None  # e.g. ["static_cov_av_10pct", "gpem_linear_av_10pct", "gpem_quadratic_av_10pct", "baseline_av_10pct"]
 
 
 @dataclass
@@ -222,6 +222,11 @@ class RunResult:
     avg_cav_detection_time: float = 0.0
     avg_global_fusion_time: float = 0.0
     
+    # HOTA metrics (per-run, already final — not averaged across frames)
+    hota: float = 0.0
+    deta: float = 0.0
+    assa: float = 0.0
+
     # Perception scoring (Conclave)
     perception_scores: Dict[str, float] = field(default_factory=dict)
     perception_anomalies: Dict[str, bool] = field(default_factory=dict)
@@ -250,6 +255,14 @@ class AggregatedResults:
     avg_cav_amotp_mean: float = 0.0
     avg_cav_amotp_std: float = 0.0
     
+    # HOTA statistics
+    avg_hota_mean: float = 0.0
+    avg_hota_std: float = 0.0
+    avg_deta_mean: float = 0.0
+    avg_deta_std: float = 0.0
+    avg_assa_mean: float = 0.0
+    avg_assa_std: float = 0.0
+
     # Perception scoring statistics
     avg_perception_anomalies_mean: float = 0.0
     avg_perception_anomalies_std: float = 0.0
@@ -445,7 +458,7 @@ class ExperimentRunner:
                     aggregated = self._aggregate_results(out_name, run_results_by_out[out_name])
                     all_results[out_name] = aggregated
                     self._save_aggregated_results(os.path.join(self.current_experiment_dir, out_name.replace(' ', '_')), aggregated)
-                    print(f"  ✅ {out_name}: AMOTA = {aggregated.avg_global_amota_mean:.4f} (±{aggregated.avg_global_amota_std:.4f})")
+                    print(f"  ✅ {out_name}: AMOTA = {aggregated.avg_global_amota_mean:.4f} (±{aggregated.avg_global_amota_std:.4f}) | AMOTP = {aggregated.avg_global_amotp_mean:.4f}m (±{aggregated.avg_global_amotp_std:.4f})")
             else:
                 run_results = []
                 for run_id in range(1, suite.runs_per_config + 1):
@@ -463,7 +476,7 @@ class ExperimentRunner:
                 aggregated = self._aggregate_results(config_name, run_results)
                 all_results[config_name] = aggregated
                 self._save_aggregated_results(config_dir, aggregated)
-                print(f"  ✅ {config_name}: AMOTA = {aggregated.avg_global_amota_mean:.4f} (±{aggregated.avg_global_amota_std:.4f})")
+                print(f"  ✅ {config_name}: AMOTA = {aggregated.avg_global_amota_mean:.4f} (±{aggregated.avg_global_amota_std:.4f}) | AMOTP = {aggregated.avg_global_amotp_mean:.4f}m (±{aggregated.avg_global_amotp_std:.4f})")
 
             if dashboard:
                 dashboard.finish()
@@ -586,8 +599,11 @@ class ExperimentRunner:
             avg_cis_detection_time=sim_result.get("avg_cis_detection_time", 0),
             avg_cav_detection_time=sim_result.get("avg_cav_detection_time", 0),
             avg_global_fusion_time=sim_result.get("avg_global_fusion_time", 0),
+            hota=sim_result.get("global_hota", {}).get("hota", 0.0),
+            deta=sim_result.get("global_hota", {}).get("deta", 0.0),
+            assa=sim_result.get("global_hota", {}).get("assa", 0.0),
         )
-    
+
     def _aggregate_results(self, config_name: str, runs: List[RunResult]) -> AggregatedResults:
         """Aggregate results across multiple runs."""
         if not runs:
@@ -603,7 +619,12 @@ class ExperimentRunner:
         # Aggregate perception scoring metrics
         anomaly_counts = [r.num_perception_anomalies for r in runs]
         total_anomalies = sum(anomaly_counts)
-        
+
+        # Aggregate HOTA metrics
+        hotas = [r.hota for r in runs]
+        detas = [r.deta for r in runs]
+        assas = [r.assa for r in runs]
+
         return AggregatedResults(
             config_name=config_name,
             num_runs=len(runs),
@@ -619,6 +640,12 @@ class ExperimentRunner:
             avg_cis_amotp_std=stdev(cis_amotps) if len(cis_amotps) > 1 else 0,
             avg_cav_amotp_mean=mean(cav_amotps),
             avg_cav_amotp_std=stdev(cav_amotps) if len(cav_amotps) > 1 else 0,
+            avg_hota_mean=mean(hotas),
+            avg_hota_std=stdev(hotas) if len(hotas) > 1 else 0,
+            avg_deta_mean=mean(detas),
+            avg_deta_std=stdev(detas) if len(detas) > 1 else 0,
+            avg_assa_mean=mean(assas),
+            avg_assa_std=stdev(assas) if len(assas) > 1 else 0,
             avg_perception_anomalies_mean=mean(anomaly_counts),
             avg_perception_anomalies_std=stdev(anomaly_counts) if len(anomaly_counts) > 1 else 0,
             total_anomaly_detections=total_anomalies,
@@ -890,7 +917,9 @@ class ExperimentRunner:
                 all_results[config_name] = aggregated
                 self._save_aggregated_results(config_dir, aggregated)
                 print(f"  📊 {config_name}: AMOTA = {aggregated.avg_global_amota_mean:.4f} "
-                      f"(±{aggregated.avg_global_amota_std:.4f})")
+                      f"(±{aggregated.avg_global_amota_std:.4f}) | "
+                      f"HOTA = {aggregated.avg_hota_mean:.4f} "
+                      f"(DetA={aggregated.avg_deta_mean:.4f}, AssA={aggregated.avg_assa_mean:.4f})")
         
         # Save summary
         self._save_summary(suite, all_results)
@@ -907,13 +936,17 @@ class ExperimentRunner:
         return all_results
     
     def _process_triple_sim_result(self, sim_result: Dict, run_id: int, output_names: List[str]) -> List[RunResult]:
-        """Process triple_global_metrics from one run into three RunResults (static, gpem_linear, gpem_quadratic)."""
+        """Process triple_global_metrics from one run into RunResults (baseline, static, gpem_linear, gpem_quadratic per filter)."""
         cav_metrics = sim_result.get("total_cav_metrics", {})
         cis_metrics = sim_result.get("total_cis_metrics", {})
         triple_metrics = sim_result.get("triple_global_metrics", {})
         triple_amota_counts = sim_result.get("triple_global_amota_frames_count", {})
         triple_amotp_counts = sim_result.get("triple_global_amotp_frames_count", {})
-        method_keys = ["static", "gpem_linear", "gpem_quadratic"]
+        triple_hota = sim_result.get("triple_global_hota", {})
+        method_keys = ["baseline", "static", "gpem_linear", "gpem_quadratic",
+                       "ci_baseline", "ci_static", "ci_gpem_linear", "ci_gpem_quadratic",
+                       "akf_baseline", "akf_static", "akf_gpem_linear", "akf_gpem_quadratic",
+                       "pf_baseline", "pf_static", "pf_gpem_linear", "pf_gpem_quadratic"]
         results = []
         for i, (out_name, key) in enumerate(zip(output_names, method_keys)):
             global_metrics = triple_metrics.get(key, {})
@@ -921,6 +954,7 @@ class ExperimentRunner:
             amotp_frames = triple_amotp_counts.get(key, 1)
             avg_global_amota = global_metrics.get("amota", 0) / max(amota_frames, 1)
             avg_global_amotp = global_metrics.get("amotp", 0) / max(amotp_frames, 1)
+            hota_result = triple_hota.get(key, {})
             results.append(RunResult(
                 config_name=out_name,
                 run_id=run_id,
@@ -940,6 +974,9 @@ class ExperimentRunner:
                 avg_cis_detection_time=sim_result.get("avg_cis_detection_time", 0),
                 avg_cav_detection_time=sim_result.get("avg_cav_detection_time", 0),
                 avg_global_fusion_time=sim_result.get("avg_global_fusion_time", 0),
+                hota=hota_result.get("hota", 0.0),
+                deta=hota_result.get("deta", 0.0),
+                assa=hota_result.get("assa", 0.0),
             ))
         return results
 
@@ -978,11 +1015,14 @@ class ExperimentRunner:
             avg_cis_detection_time=sim_result.get("avg_cis_detection_time", 0),
             avg_cav_detection_time=sim_result.get("avg_cav_detection_time", 0),
             avg_global_fusion_time=sim_result.get("avg_global_fusion_time", 0),
+            hota=sim_result.get("global_hota", {}).get("hota", 0.0),
+            deta=sim_result.get("global_hota", {}).get("deta", 0.0),
+            assa=sim_result.get("global_hota", {}).get("assa", 0.0),
             perception_scores=perception_scores,
             perception_anomalies=perception_anomalies,
             num_perception_anomalies=num_anomalies,
         )
-    
+
     def _save_suite_config(self, suite: ExperimentSuite):
         """Save the experiment suite configuration."""
         config_path = os.path.join(self.current_experiment_dir, "suite_config.json")
@@ -1087,6 +1127,13 @@ class ExperimentRunner:
                 "avg_cav_amota_std": agg.avg_cav_amota_std,
                 "avg_cav_amotp_mean": agg.avg_cav_amotp_mean,
                 "avg_cav_amotp_std": agg.avg_cav_amotp_std,
+                # HOTA metrics
+                "avg_hota_mean": agg.avg_hota_mean,
+                "avg_hota_std": agg.avg_hota_std,
+                "avg_deta_mean": agg.avg_deta_mean,
+                "avg_deta_std": agg.avg_deta_std,
+                "avg_assa_mean": agg.avg_assa_mean,
+                "avg_assa_std": agg.avg_assa_std,
                 # Perception scoring
                 "avg_perception_anomalies_mean": agg.avg_perception_anomalies_mean,
                 "avg_perception_anomalies_std": agg.avg_perception_anomalies_std,
@@ -1096,23 +1143,85 @@ class ExperimentRunner:
         with open(summary_path, 'w') as f:
             json.dump(summary, f, indent=2)
         
+        # Build baseline lookup: for each config, find its matching baseline
+        # e.g. "gpem_linear_av_10.0pct" -> "baseline_av_10.0pct"
+        # e.g. "ci_static_av_10.0pct" -> "ci_baseline_av_10.0pct"
+        # e.g. "akf_gpem_quadratic_av_10.0pct" -> "akf_baseline_av_10.0pct"
+        def _find_baseline_name(config_name: str) -> str:
+            """Find the matching baseline config name for a given config."""
+            if config_name.startswith("pf_"):
+                suffix = config_name.split("pf_", 1)[1]
+                for prefix in ("static_av_", "static_cov_av_", "gpem_linear_av_", "gpem_quadratic_av_", "baseline_av_"):
+                    if suffix.startswith(prefix):
+                        return "pf_baseline_av_" + suffix.split("av_", 1)[1]
+                for prefix in ("static_", "gpem_linear_", "gpem_quadratic_", "baseline_"):
+                    if f"_{prefix}" in config_name:
+                        return config_name.replace(f"_{prefix}", "_baseline_").replace("_baseline_baseline_", "_baseline_")
+            elif config_name.startswith("akf_"):
+                suffix = config_name.split("akf_", 1)[1]
+                # Replace the method part with "baseline"
+                for prefix in ("static_av_", "static_cov_av_", "gpem_linear_av_", "gpem_quadratic_av_", "baseline_av_"):
+                    if suffix.startswith(prefix):
+                        return "akf_baseline_av_" + suffix.split("av_", 1)[1]
+                # dist sweep format
+                for prefix in ("static_", "gpem_linear_", "gpem_quadratic_", "baseline_"):
+                    if f"_{prefix}" in config_name:
+                        return config_name.replace(f"_{prefix}", "_baseline_").replace("_baseline_baseline_", "_baseline_")
+            elif config_name.startswith("ci_"):
+                suffix = config_name.split("ci_", 1)[1]
+                for prefix in ("static_av_", "static_cov_av_", "gpem_linear_av_", "gpem_quadratic_av_", "baseline_av_"):
+                    if suffix.startswith(prefix):
+                        return "ci_baseline_av_" + suffix.split("av_", 1)[1]
+                for prefix in ("static_", "gpem_linear_", "gpem_quadratic_", "baseline_"):
+                    if f"_{prefix}" in config_name:
+                        return config_name.replace(f"_{prefix}", "_baseline_").replace("_baseline_baseline_", "_baseline_")
+            else:
+                # Kalman filter group (no prefix)
+                for prefix in ("static_cov_av_", "gpem_linear_av_", "gpem_quadratic_av_", "baseline_av_"):
+                    if config_name.startswith(prefix):
+                        return "baseline_av_" + config_name.split("av_", 1)[1]
+                # dist sweep format: gpem_dist_sweep_step_0_static -> gpem_dist_sweep_step_0_baseline
+                if "_static" in config_name or "_gpem_linear" in config_name or "_gpem_quadratic" in config_name:
+                    for method in ("_static", "_gpem_linear", "_gpem_quadratic"):
+                        if config_name.endswith(method):
+                            return config_name[:-len(method)] + "_baseline"
+            return ""
+
+        def _pct_improvement(value: float, baseline_value: float) -> str:
+            """Calculate percentage improvement (higher AMOTA = better, lower AMOTP = better)."""
+            if baseline_value == 0:
+                return "N/A"
+            pct = (value - baseline_value) / abs(baseline_value) * 100
+            return f"{pct:+.2f}%"
+
         # Also save a CSV for easy viewing
         csv_path = os.path.join(self.current_experiment_dir, "summary.csv")
         with open(csv_path, 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerow([
                 "Config", "Runs",
-                "Global AMOTA (mean)", "Global AMOTA (std)",
-                "Global AMOTP (mean)", "Global AMOTP (std)",
+                "Global AMOTA (mean)", "Global AMOTA (std)", "AMOTA vs baseline",
+                "Global AMOTP (mean)", "Global AMOTP (std)", "AMOTP vs baseline",
+                "HOTA (mean)", "HOTA (std)", "HOTA vs baseline",
+                "DetA (mean)", "DetA (std)",
+                "AssA (mean)", "AssA (std)",
                 "CIS AMOTA (mean)", "CIS AMOTA (std)",
                 "CAV AMOTA (mean)", "CAV AMOTA (std)",
                 "Anomalies (mean)", "Anomalies (std)", "Total Anomalies"
             ])
             for config_name, agg in all_results.items():
+                baseline_name = _find_baseline_name(config_name)
+                baseline_agg = all_results.get(baseline_name)
+                amota_pct = _pct_improvement(agg.avg_global_amota_mean, baseline_agg.avg_global_amota_mean) if baseline_agg else ""
+                amotp_pct = _pct_improvement(agg.avg_global_amotp_mean, baseline_agg.avg_global_amotp_mean) if baseline_agg else ""
+                hota_pct = _pct_improvement(agg.avg_hota_mean, baseline_agg.avg_hota_mean) if baseline_agg else ""
                 writer.writerow([
                     config_name, agg.num_runs,
-                    f"{agg.avg_global_amota_mean:.4f}", f"{agg.avg_global_amota_std:.4f}",
-                    f"{agg.avg_global_amotp_mean:.4f}", f"{agg.avg_global_amotp_std:.4f}",
+                    f"{agg.avg_global_amota_mean:.4f}", f"{agg.avg_global_amota_std:.4f}", amota_pct,
+                    f"{agg.avg_global_amotp_mean:.4f}", f"{agg.avg_global_amotp_std:.4f}", amotp_pct,
+                    f"{agg.avg_hota_mean:.4f}", f"{agg.avg_hota_std:.4f}", hota_pct,
+                    f"{agg.avg_deta_mean:.4f}", f"{agg.avg_deta_std:.4f}",
+                    f"{agg.avg_assa_mean:.4f}", f"{agg.avg_assa_std:.4f}",
                     f"{agg.avg_cis_amota_mean:.4f}", f"{agg.avg_cis_amota_std:.4f}",
                     f"{agg.avg_cav_amota_mean:.4f}", f"{agg.avg_cav_amota_std:.4f}",
                     f"{agg.avg_perception_anomalies_mean:.2f}", f"{agg.avg_perception_anomalies_std:.2f}",
@@ -1395,20 +1504,175 @@ def create_gpem_penetration_sweep_suite(
         cfg["localizer_allocation"] = loc_alloc
 
         output_names = [
+            f"baseline_av_{rate:.1f}pct",
             f"static_cov_av_{rate:.1f}pct",
             f"gpem_linear_av_{rate:.1f}pct",
             f"gpem_quadratic_av_{rate:.1f}pct",
+            f"ci_baseline_av_{rate:.1f}pct",
+            f"ci_static_av_{rate:.1f}pct",
+            f"ci_gpem_linear_av_{rate:.1f}pct",
+            f"ci_gpem_quadratic_av_{rate:.1f}pct",
+            f"akf_baseline_av_{rate:.1f}pct",
+            f"akf_static_av_{rate:.1f}pct",
+            f"akf_gpem_linear_av_{rate:.1f}pct",
+            f"akf_gpem_quadratic_av_{rate:.1f}pct",
+            f"pf_baseline_av_{rate:.1f}pct",
+            f"pf_static_av_{rate:.1f}pct",
+            f"pf_gpem_linear_av_{rate:.1f}pct",
+            f"pf_gpem_quadratic_av_{rate:.1f}pct",
         ]
         variants.append(ExperimentConfig(
             name=f"av_{rate:.1f}pct",
             config=cfg,
-            description=f"Triple fusion (static/linear/quadratic) @ {rate:.1f}% AVs",
+            description=f"Triple fusion (baseline/static/linear/quadratic) @ {rate:.1f}% AVs",
             triple_fusion_output_names=output_names,
         ))
 
     return ExperimentSuite(
         name="GPEM_Penetration_Sweep",
-        description="One run per AV rate; three synced outputs (static, GPEM linear, GPEM quadratic) per run",
+        description="One run per AV rate; four synced outputs (baseline, static, GPEM linear, GPEM quadratic) per run",
+        runs_per_config=runs_per_config,
+        warmup_steps=warmup_steps,
+        record_steps=record_steps,
+        error_injection_start=None,
+        error_injection_end=None,
+        baseline=None,
+        variants=variants,
+    )
+
+
+def create_gpem_penetration_sweep_accurate_suite(
+    runs_per_config: int = 10,
+    av_injection_rates: List[float] = None,
+    warmup_steps: int = 600,
+    record_steps: int = 6000,
+) -> ExperimentSuite:
+    """
+    Same as gpem_penetration_sweep but with accurate localizers (1/4 error).
+
+    Tests whether reducing localization error lets GPEM's advantage emerge.
+    Uses kiss_icp_accurate and orb_slam3_accurate instead of CT_ICP and ORB_SLAM3.
+    """
+    from config_templates import get_pointpillars_os1_128_config
+
+    if av_injection_rates is None:
+        av_injection_rates = [1.0, 2.5, 5.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0]
+
+    variants = []
+    det_alloc = [(1.0 / 3, "BEV_FUSION"), (1.0 / 3, "CENTERPOINT"), (1.0 / 3, "DETR3D")]
+    loc_alloc = [(0.5, "kiss_icp_accurate"), (0.5, "orb_slam3_accurate")]
+
+    for rate in av_injection_rates:
+        cfg = get_pointpillars_os1_128_config()
+        cfg["cav_probability"] = rate / 100.0
+        cfg["error_type"] = "None"
+        cfg["error_level"] = 0
+        cfg["use_trust_scoring"] = False
+        cfg["use_gpem_model"] = False
+        cfg["gpem_triple_fusion"] = True
+        cfg["detector_allocation"] = det_alloc
+        cfg["localizer_allocation"] = loc_alloc
+
+        output_names = [
+            f"baseline_av_{rate:.1f}pct",
+            f"static_cov_av_{rate:.1f}pct",
+            f"gpem_linear_av_{rate:.1f}pct",
+            f"gpem_quadratic_av_{rate:.1f}pct",
+            f"ci_baseline_av_{rate:.1f}pct",
+            f"ci_static_av_{rate:.1f}pct",
+            f"ci_gpem_linear_av_{rate:.1f}pct",
+            f"ci_gpem_quadratic_av_{rate:.1f}pct",
+            f"akf_baseline_av_{rate:.1f}pct",
+            f"akf_static_av_{rate:.1f}pct",
+            f"akf_gpem_linear_av_{rate:.1f}pct",
+            f"akf_gpem_quadratic_av_{rate:.1f}pct",
+            f"pf_baseline_av_{rate:.1f}pct",
+            f"pf_static_av_{rate:.1f}pct",
+            f"pf_gpem_linear_av_{rate:.1f}pct",
+            f"pf_gpem_quadratic_av_{rate:.1f}pct",
+        ]
+        variants.append(ExperimentConfig(
+            name=f"av_{rate:.1f}pct",
+            config=cfg,
+            description=f"Triple fusion (baseline/static/linear/quadratic) @ {rate:.1f}% AVs — accurate localizers (÷4)",
+            triple_fusion_output_names=output_names,
+        ))
+
+    return ExperimentSuite(
+        name="GPEM_Penetration_Sweep_Accurate",
+        description="Same as penetration sweep but with 1/4 localization error (kiss_icp_accurate, orb_slam3_accurate)",
+        runs_per_config=runs_per_config,
+        warmup_steps=warmup_steps,
+        record_steps=record_steps,
+        error_injection_start=None,
+        error_injection_end=None,
+        baseline=None,
+        variants=variants,
+    )
+
+
+def create_gpem_penetration_sweep_static_matching_suite(
+    runs_per_config: int = 10,
+    av_injection_rates: List[float] = None,
+    warmup_steps: int = 600,
+    record_steps: int = 6000,
+) -> ExperimentSuite:
+    """
+    Same as gpem_penetration_sweep_accurate but with static matching covariance.
+
+    All three streams use the same static covariance for Mahalanobis gating (matching),
+    but their own GPEM/static covariance for Kalman fusion. This isolates whether
+    matching or fusion is the bottleneck for GPEM.
+    """
+    from config_templates import get_pointpillars_os1_128_config
+
+    if av_injection_rates is None:
+        av_injection_rates = [1.0, 2.5, 5.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0]
+
+    variants = []
+    det_alloc = [(1.0 / 3, "BEV_FUSION"), (1.0 / 3, "CENTERPOINT"), (1.0 / 3, "DETR3D")]
+    loc_alloc = [(0.5, "kiss_icp_accurate"), (0.5, "orb_slam3_accurate")]
+
+    for rate in av_injection_rates:
+        cfg = get_pointpillars_os1_128_config()
+        cfg["cav_probability"] = rate / 100.0
+        cfg["error_type"] = "None"
+        cfg["error_level"] = 0
+        cfg["use_trust_scoring"] = False
+        cfg["use_gpem_model"] = False
+        cfg["gpem_triple_fusion"] = True
+        cfg["use_static_matching"] = True
+        cfg["detector_allocation"] = det_alloc
+        cfg["localizer_allocation"] = loc_alloc
+
+        output_names = [
+            f"baseline_av_{rate:.1f}pct",
+            f"static_cov_av_{rate:.1f}pct",
+            f"gpem_linear_av_{rate:.1f}pct",
+            f"gpem_quadratic_av_{rate:.1f}pct",
+            f"ci_baseline_av_{rate:.1f}pct",
+            f"ci_static_av_{rate:.1f}pct",
+            f"ci_gpem_linear_av_{rate:.1f}pct",
+            f"ci_gpem_quadratic_av_{rate:.1f}pct",
+            f"akf_baseline_av_{rate:.1f}pct",
+            f"akf_static_av_{rate:.1f}pct",
+            f"akf_gpem_linear_av_{rate:.1f}pct",
+            f"akf_gpem_quadratic_av_{rate:.1f}pct",
+            f"pf_baseline_av_{rate:.1f}pct",
+            f"pf_static_av_{rate:.1f}pct",
+            f"pf_gpem_linear_av_{rate:.1f}pct",
+            f"pf_gpem_quadratic_av_{rate:.1f}pct",
+        ]
+        variants.append(ExperimentConfig(
+            name=f"av_{rate:.1f}pct",
+            config=cfg,
+            description=f"Triple fusion w/ static matching @ {rate:.1f}% AVs — accurate localizers (÷4)",
+            triple_fusion_output_names=output_names,
+        ))
+
+    return ExperimentSuite(
+        name="GPEM_Penetration_Sweep_Static_Matching",
+        description="Static matching cov for all streams, GPEM cov for fusion only. Accurate localizers (÷4).",
         runs_per_config=runs_per_config,
         warmup_steps=warmup_steps,
         record_steps=record_steps,
@@ -1477,9 +1741,22 @@ def create_gpem_distribution_sweep_suite(
         config["detector_allocation"] = det_alloc
         config["localizer_allocation"] = loc_alloc
         output_names = [
+            f"gpem_dist_sweep_step_{step_idx}_baseline",
             f"gpem_dist_sweep_step_{step_idx}_static",
             f"gpem_dist_sweep_step_{step_idx}_gpem_linear",
             f"gpem_dist_sweep_step_{step_idx}_gpem_quadratic",
+            f"gpem_dist_sweep_step_{step_idx}_ci_baseline",
+            f"gpem_dist_sweep_step_{step_idx}_ci_static",
+            f"gpem_dist_sweep_step_{step_idx}_ci_gpem_linear",
+            f"gpem_dist_sweep_step_{step_idx}_ci_gpem_quadratic",
+            f"gpem_dist_sweep_step_{step_idx}_akf_baseline",
+            f"gpem_dist_sweep_step_{step_idx}_akf_static",
+            f"gpem_dist_sweep_step_{step_idx}_akf_gpem_linear",
+            f"gpem_dist_sweep_step_{step_idx}_akf_gpem_quadratic",
+            f"gpem_dist_sweep_step_{step_idx}_pf_baseline",
+            f"gpem_dist_sweep_step_{step_idx}_pf_static",
+            f"gpem_dist_sweep_step_{step_idx}_pf_gpem_linear",
+            f"gpem_dist_sweep_step_{step_idx}_pf_gpem_quadratic",
         ]
         variants.append(ExperimentConfig(
             name=f"gpem_dist_sweep_step_{step_idx}",
@@ -1490,7 +1767,7 @@ def create_gpem_distribution_sweep_suite(
 
     return ExperimentSuite(
         name="GPEM_Distribution_Sweep",
-        description="One run per step; three synced outputs (static, GPEM linear, GPEM quadratic) per run",
+        description="One run per step; four synced outputs (baseline, static, GPEM linear, GPEM quadratic) per run",
         runs_per_config=runs_per_config,
         warmup_steps=warmup_steps,
         record_steps=record_steps,
@@ -1656,7 +1933,7 @@ if __name__ == "__main__":
         "--suite", 
         type=str, 
         default="pointpillars",
-        choices=["sensor_comparison", "pointpillars", "error_injection", "error_sweep", "trust_comparison", "gpem_penetration_sweep", "gpem_distribution_sweep"],
+        choices=["sensor_comparison", "pointpillars", "error_injection", "error_sweep", "trust_comparison", "gpem_penetration_sweep", "gpem_penetration_sweep_accurate", "gpem_penetration_sweep_static_matching", "gpem_distribution_sweep"],
         help="Type of experiment suite to run"
     )
     parser.add_argument(
@@ -1782,8 +2059,15 @@ if __name__ == "__main__":
         help="SUMO map to use (default: single). Use tempe_2x3 for Tempe 2x3 grid map."
     )
     
+    parser.add_argument(
+        "--variance-floor",
+        type=float,
+        default=None,
+        help="Minimum diagonal variance for GPEM R matrix (e.g., 0.05). Prevents over-confidence at close range."
+    )
+
     args = parser.parse_args()
-    
+
     # Create experiment suite
     if args.suite == "sensor_comparison":
         suite = create_sensor_comparison_suite(runs_per_config=args.runs)
@@ -1837,6 +2121,20 @@ if __name__ == "__main__":
             warmup_steps=args.warmup,
             record_steps=args.record,
         )
+    elif args.suite == "gpem_penetration_sweep_accurate":
+        suite = create_gpem_penetration_sweep_accurate_suite(
+            runs_per_config=args.runs,
+            av_injection_rates=[1.0, 2.5, 5.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0],
+            warmup_steps=args.warmup,
+            record_steps=args.record,
+        )
+    elif args.suite == "gpem_penetration_sweep_static_matching":
+        suite = create_gpem_penetration_sweep_static_matching_suite(
+            runs_per_config=args.runs,
+            av_injection_rates=[1.0, 2.5, 5.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0],
+            warmup_steps=args.warmup,
+            record_steps=args.record,
+        )
     elif args.suite == "gpem_distribution_sweep":
         # GPEM: sweep detector/localizer distribution from 100% same to even split
         suite = create_gpem_distribution_sweep_suite(
@@ -1864,7 +2162,7 @@ if __name__ == "__main__":
         print(f"  🗺  Using map: {args.map} (maps/{args.map}/osm.sumocfg)\n")
     
     # Override timing if specified (except for error_sweep/trust_comparison/gpem_penetration_sweep/gpem_distribution_sweep which handle it internally)
-    if args.suite not in ["error_sweep", "trust_comparison", "gpem_penetration_sweep", "gpem_distribution_sweep"]:
+    if args.suite not in ["error_sweep", "trust_comparison", "gpem_penetration_sweep", "gpem_penetration_sweep_accurate", "gpem_penetration_sweep_static_matching", "gpem_distribution_sweep"]:
         suite.fast_forward_steps = args.fast_forward
         suite.warmup_steps = args.warmup
         suite.record_steps = args.record
@@ -1875,7 +2173,14 @@ if __name__ == "__main__":
     # Apply randomized FF range if provided
     if args.ff_min is not None and args.ff_max is not None:
         suite.fast_forward_range = (args.ff_min, args.ff_max)
-    
+
+    # Inject variance floor into all configs if specified
+    if args.variance_floor is not None:
+        for v in suite.variants:
+            v.config["variance_floor"] = args.variance_floor
+        if suite.baseline is not None:
+            suite.baseline.config["variance_floor"] = args.variance_floor
+
     # Print suite info
     total_configs = 1 + len(suite.variants)  # baseline + variants
     total_runs = total_configs * suite.runs_per_config
@@ -1883,7 +2188,7 @@ if __name__ == "__main__":
     
     if args.suite == "trust_comparison":
         trust_status = "COMPARING (ON vs OFF)"
-    elif args.suite in ("gpem_penetration_sweep", "gpem_distribution_sweep"):
+    elif args.suite in ("gpem_penetration_sweep", "gpem_penetration_sweep_accurate", "gpem_penetration_sweep_static_matching", "gpem_distribution_sweep"):
         trust_status = "DISABLED (Model comparison only)"
     else:
         trust_status = "DISABLED" if args.no_trust_scoring else "ENABLED"
@@ -1903,7 +2208,7 @@ if __name__ == "__main__":
     results = runner.run_suite(suite, parallel=args.parallel)
     
     # Auto-generate plots for GPEM suites
-    if args.suite == "gpem_penetration_sweep":
+    if args.suite in ("gpem_penetration_sweep", "gpem_penetration_sweep_accurate", "gpem_penetration_sweep_static_matching"):
         try:
             print("\n📊 Generating GPEM comparison plot...")
             sys.path.append(os.path.join(os.path.dirname(__file__), "..", "scripts"))
@@ -1925,29 +2230,14 @@ if __name__ == "__main__":
     print("SUMMARY")
     print("="*60)
     if args.suite == "gpem_distribution_sweep":
-        # Triple fusion: static, gpem_linear, gpem_quadratic per step
+        # Print all 16 variants per step (same format as penetration sweep)
         import re
-        by_step = {}
         for config_name, agg in results.items():
-            m = re.match(r"gpem_dist_sweep_step_(\d+)_(static|gpem_linear|gpem_quadratic)", config_name)
-            if m:
-                step_idx, variant = int(m.group(1)), m.group(2)
-                if step_idx not in by_step:
-                    by_step[step_idx] = {}
-                by_step[step_idx][variant] = agg.avg_global_amota_mean
-        for step_idx in sorted(by_step.keys()):
-            step_res = by_step[step_idx]
-            s_val = step_res.get("static")
-            l_val = step_res.get("gpem_linear")
-            q_val = step_res.get("gpem_quadratic")
-            if s_val is not None and l_val is not None and q_val is not None:
-                print(f"  Step {step_idx}:  static = {s_val:.4f}  |  gpem_linear = {l_val:.4f}  |  gpem_quadratic = {q_val:.4f}")
-            else:
-                print(f"  Step {step_idx}:  static = {step_res.get('static', 'N/A')}  |  gpem_linear = {step_res.get('gpem_linear', 'N/A')}  |  gpem_quadratic = {step_res.get('gpem_quadratic', 'N/A')}")
+            print(f"{config_name}: Global AMOTA = {agg.avg_global_amota_mean:.4f} \u00b1 {agg.avg_global_amota_std:.4f} | AMOTP = {agg.avg_global_amotp_mean:.4f}m \u00b1 {agg.avg_global_amotp_std:.4f} | HOTA = {agg.avg_hota_mean:.4f} (DetA={agg.avg_deta_mean:.4f}, AssA={agg.avg_assa_mean:.4f})")
         print("="*60)
     else:
         for config_name, agg in results.items():
-            print(f"{config_name}: Global AMOTA = {agg.avg_global_amota_mean:.4f} ± {agg.avg_global_amota_std:.4f}")
+            print(f"{config_name}: Global AMOTA = {agg.avg_global_amota_mean:.4f} ± {agg.avg_global_amota_std:.4f} | AMOTP = {agg.avg_global_amotp_mean:.4f}m ± {agg.avg_global_amotp_std:.4f} | HOTA = {agg.avg_hota_mean:.4f} (DetA={agg.avg_deta_mean:.4f}, AssA={agg.avg_assa_mean:.4f})")
     
     # Clean exit
     sys.exit(0)

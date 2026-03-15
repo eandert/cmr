@@ -1,14 +1,16 @@
 # BEV Fusion (lidar+camera) - from mmdetection3d
 # Linear model: abs_error = intercept + slope * distance
 # Quadratic model: abs_error = quad_a * d^2 + quad_b * d + quad_c
+# Bias linear: signed_bias = bias_intercept + bias_slope * distance
+# Bias quadratic: signed_bias = bias_quad_a * d^2 + bias_quad_b * d + bias_quad_c
 # For covariance: std = 1.253 * abs_error (half-normal to std conversion)
 
-error_type,intercept,slope,quad_a,quad_b,quad_c,unit,notes
-radial,0.031255,0.003281,-2.126893e-06,0.003401052,0.02996122,meters,Range error
-lateral,0.054972,0.003078,2.813999e-05,0.001495034,0.07208734,meters,Cross-range error
-vertical,0.044507,0.002025,-2.536041e-08,0.002026423,0.04449204,meters,Elevation error
-yaw,0.151646,-0.001857,3.852989e-05,-0.004024932,0.1750806,radians,Heading angle
-width,0.110036,0.006444,5.193609e-05,0.003522338,0.1416244,meters,Box width
-length,0.090775,0.001145,1.143157e-05,0.0005022664,0.09772807,meters,Box length
-box_height,0.071002,0.002021,1.682555e-05,0.001074854,0.0812362,meters,Box height
-miss_rate,0.108322,0.009351,9.827445e-05,0.001435237,0.2234099,probability,Miss rate
+error_type,intercept,slope,quad_a,quad_b,quad_c,bias_intercept,bias_slope,bias_quad_a,bias_quad_b,bias_quad_c,unit,notes
+radial,0.05313,0.003526,8.117941e-06,0.003069333,0.05806762,-0.003784,-0.000108,-1.510246e-05,0.000741783,-0.0129702,meters,Range error
+lateral,0.036354,0.002926,1.842863e-05,0.001889124,0.0475625,-0.001784,-0.00028,1.424001e-05,-0.001081321,0.006877277,meters,Cross-range error
+vertical,0.044507,0.002025,-2.536041e-08,0.002026423,0.04449204,0.009552,-2.7e-05,-2.809526e-05,0.00155359,-0.007536325,meters,Elevation error
+yaw,0.151646,-0.001857,3.852989e-05,-0.004024932,0.1750806,-0.01162,0.000283,-1.0823e-05,0.0008922901,-0.01820235,radians,Heading angle
+width,0.110036,0.006444,5.193609e-05,0.003522338,0.1416244,-0.031987,-4e-05,-4.441497e-05,0.002458229,-0.05900137,meters,Box width
+length,0.090775,0.001145,1.143157e-05,0.0005022664,0.09772807,-0.003657,0.000108,-4.532565e-06,0.0003628844,-0.006414172,meters,Box length
+box_height,0.071002,0.002021,1.682555e-05,0.001074854,0.0812362,-0.025439,0.00023,8.156436e-06,-0.0002288578,-0.02047838,meters,Box height
+miss_rate,0.108322,0.009351,9.827445e-05,0.001435237,0.2234099,,,,,,probability,Miss rate

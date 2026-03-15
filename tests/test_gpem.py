@@ -109,20 +109,22 @@ class TestGPEMRegressionParameters(unittest.TestCase):
         print(f"Perp regression: intercept={intercept:.6f}, slope={slope:.6f}")
 
     def test_abs_to_std_conversion(self):
-        """Test the conversion from absolute error to standard deviation."""
-        model = get_error_model("bev_fusion", use_gpem_model=True)
-        
-        # _abs_to_std should convert absolute error to std
-        # For Normal distribution: std ≈ abs_error / 0.798 (mean absolute deviation)
+        """Test the conversion from absolute error to standard deviation.
+
+        When distribution bins are available, regressions are refit to predict std directly,
+        so MAE_TO_STD = 1.0 (identity). When bins are NOT available, the old 1.2533 factor
+        is used (Normal assumption).
+        """
+        # With bins available: MAE_TO_STD should be 1.0 (regression predicts std directly)
+        model_with_bins = get_error_model("bev_fusion", use_gpem_model=True)
+        self.assertAlmostEqual(model_with_bins.MAE_TO_STD, 1.0,
+            msg="MAE_TO_STD should be 1.0 when regressions are refit from distribution bins")
+
+        # _abs_to_std is now identity when bins are available
         abs_error = 1.0
-        std = model._abs_to_std(abs_error)
-        
-        # Expected: std ≈ abs_error / 0.798 ≈ 1.25
-        expected_ratio = 1.0 / 0.7978845608  # sqrt(2/pi)
-        self.assertGreater(std, abs_error, 
-            msg="Std should be larger than absolute error for Normal dist")
-        self.assertAlmostEqual(std, abs_error * expected_ratio, delta=0.1,
-            msg=f"Std conversion should match expected ratio: got {std}, expected {abs_error * expected_ratio}")
+        std = model_with_bins._abs_to_std(abs_error)
+        self.assertAlmostEqual(std, abs_error, delta=0.001,
+            msg="With refit regressions, _abs_to_std should be identity")
 
     def test_regression_produces_reasonable_values(self):
         """Regression should produce physically reasonable error estimates."""
@@ -321,21 +323,26 @@ class TestGPEMStaticCovarianceValues(unittest.TestCase):
     """Test that static covariance values are reasonable."""
 
     def test_static_average_calculation(self):
-        """Static covariance should be average of all bin stds."""
+        """Static covariance should be sqrt(mean(variance)) across bins.
+
+        This averages variances (not stds) to avoid Jensen's inequality bias:
+        (mean(stds))^2 < mean(stds^2), so averaging stds underestimates variance.
+        """
         model = get_error_model("bev_fusion", use_gpem_model=False)
-        
-        # Calculate average manually
+
+        # Calculate expected: sqrt(mean of variances)
         distal_stds = [bin_obj.get_std() for bin_obj in model.distal_bins]
-        expected_avg = np.mean(distal_stds)
-        
+        expected_avg = np.sqrt(np.mean([s**2 for s in distal_stds]))
+
         actual_avg = model.get_distal_std_average()
-        
+
         print(f"\nBin stds: {[f'{s:.4f}' for s in distal_stds]}")
-        print(f"Expected avg: {expected_avg:.4f}")
+        print(f"Expected avg (sqrt(mean(var))): {expected_avg:.4f}")
         print(f"Actual avg: {actual_avg:.4f}")
-        
+        print(f"Old avg (mean(stds)): {np.mean(distal_stds):.4f}")
+
         self.assertAlmostEqual(actual_avg, expected_avg, places=6,
-            msg="Static avg should match manual calculation")
+            msg="Static avg should be sqrt(mean(variance)), not mean(stds)")
 
     def test_static_covariance_is_not_too_small(self):
         """Static covariance should not be too small (would over-trust measurements)."""
@@ -3076,10 +3083,10 @@ class TestLocalizerGroundTruthLoading(unittest.TestCase):
         self.assertFalse(loc.use_quadratic)
         
         # Should have reasonable coefficients (from CSV)
-        # Real SLAM at highway speeds has meter-scale errors
+        # Cross-sequence KISS ICP has ~7-9cm std for accurate, ~30cm for noisy
         std_at_15 = loc.get_lateral_localization_std(15.0)
-        self.assertGreater(std_at_15, 0.1, 
-            msg="Kiss ICP lateral std at 15 m/s should be > 10cm")
+        self.assertGreater(std_at_15, 0.01,
+            msg="Kiss ICP lateral std at 15 m/s should be > 1cm")
         self.assertLess(std_at_15, 5.0,
             msg="Kiss ICP lateral std at 15 m/s should be < 5m")
     
@@ -3106,18 +3113,18 @@ class TestLocalizerGroundTruthLoading(unittest.TestCase):
         for loc_type in ["kiss_icp", "orb_slam3"]:
             loc = get_localizer(loc_type, ErrorPackage(None, 0), True, False)
             
-            # At 10 m/s, localization std should be between 10cm and 5m
-            # Real outdoor SLAM at highway speeds has meter-scale errors
+            # At 10 m/s, localization std should be positive and reasonable
+            # kiss_icp (cross-seq accurate): ~7-9cm, orb_slam3: may be larger
             lat_std = loc.get_lateral_localization_std(10.0)
             long_std = loc.get_longitudinal_localization_std(10.0)
-            
-            self.assertGreater(lat_std, 0.1,
-                msg=f"{loc_type} lateral std at 10 m/s should be > 10cm")
+
+            self.assertGreater(lat_std, 0.01,
+                msg=f"{loc_type} lateral std at 10 m/s should be > 1cm")
             self.assertLess(lat_std, 5.0,
                 msg=f"{loc_type} lateral std at 10 m/s should be < 5m")
-            
-            self.assertGreater(long_std, 0.1,
-                msg=f"{loc_type} longitudinal std at 10 m/s should be > 10cm")
+
+            self.assertGreater(long_std, 0.01,
+                msg=f"{loc_type} longitudinal std at 10 m/s should be > 1cm")
             self.assertLess(long_std, 5.0,
                 msg=f"{loc_type} longitudinal std at 10 m/s should be < 5m")
 
@@ -3329,37 +3336,34 @@ class TestMAEtoSTDConversion(unittest.TestCase):
         """Verify covariance matrix contains variance (std^2), not std or MAE."""
         from localizer import Localizer, MAE_TO_STD
         import numpy as np
-        
+
         lat_coeffs = [0.04, 0.0015]
         long_coeffs = [0.05, 0.002]
-        
+
         class MockErrorPackage:
             pass
-        
+
         loc = Localizer(lat_coeffs, long_coeffs, MockErrorPackage(), use_gpem_model=True)
-        
+
         velocity = 15.0
         yaw = 0.0  # East-facing, no rotation
-        
+
         cov = loc.get_localization_covariance(velocity, yaw)
-        
-        # Expected values
+
+        # Expected: MAE from polynomial → multiply by MAE_TO_STD → square for variance
         lat_mae = 0.04 + 0.0015 * velocity
         long_mae = 0.05 + 0.002 * velocity
         lat_std = lat_mae * MAE_TO_STD
         long_std = long_mae * MAE_TO_STD
         lat_var = lat_std ** 2
         long_var = long_std ** 2
-        
-        # Localization covariance has a 0.25 scale factor applied to better match real-world performance
-        LOC_COV_SCALE = 0.25
-        
-        # With yaw=0, covariance diagonal should be [long_var * scale, lat_var * scale]
+
+        # With yaw=0, covariance diagonal should be [long_var, lat_var]
         # (longitudinal aligns with x-axis when facing east)
-        self.assertAlmostEqual(cov[0, 0], long_var * LOC_COV_SCALE, places=6,
-            msg=f"Covariance[0,0] should be variance (std^2) * scale: expected {long_var * LOC_COV_SCALE:.8f}, got {cov[0,0]:.8f}")
-        self.assertAlmostEqual(cov[1, 1], lat_var * LOC_COV_SCALE, places=6,
-            msg=f"Covariance[1,1] should be variance (std^2) * scale: expected {lat_var * LOC_COV_SCALE:.8f}, got {cov[1,1]:.8f}")
+        self.assertAlmostEqual(cov[0, 0], long_var, places=6,
+            msg=f"Covariance[0,0] should be variance (std^2): expected {long_var:.8f}, got {cov[0,0]:.8f}")
+        self.assertAlmostEqual(cov[1, 1], lat_var, places=6,
+            msg=f"Covariance[1,1] should be variance (std^2): expected {lat_var:.8f}, got {cov[1,1]:.8f}")
     
     def test_localizer_sampling_uses_correct_std(self):
         """

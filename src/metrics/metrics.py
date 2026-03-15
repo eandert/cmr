@@ -125,7 +125,8 @@ def calculate_violations(cav_gt_obj, detectable_ground_truth, detected_objects, 
 
     # Calculate AMOTA score
     if calc_amota:
-        violations["amota"] = amota.calculate_amota(detected_objects, list(detectable_ground_truth.values()))
+        amota_val = amota.calculate_amota(detected_objects, list(detectable_ground_truth.values()))
+        violations["amota"] = amota_val if amota_val is not None else 0.0
         violations["amotp"] = amota.calculate_amotp(detected_objects, list(detectable_ground_truth.values()))
     else:
         violations["amota"] = 0.0

@@ -249,9 +249,14 @@ class PointPillarsOS1_128ErrorModel:
         if model_data.distribution_bins:
             self._load_distribution_bins_from_csv(model_data.distribution_bins)
             self.distributions_from_csv = True
+            # Refit GPEM regressions from distribution bin stds instead of MAE regression
+            # This eliminates the Normal-only MAE_TO_STD assumption — get_std() correctly
+            # handles all distribution types (Laplace, Logistic, Student-t, etc.)
+            if self.use_gpem_model:
+                self._refit_regressions_from_bins()
         else:
             self.distributions_from_csv = False
-        
+
         has_quad = model_data.radial.has_quadratic if model_data.radial else False
         print(f"Loaded sensor model from CSV: {model_name} (distributions: {self.distributions_from_csv}, quadratic: {has_quad})")
     
@@ -296,6 +301,53 @@ class PointPillarsOS1_128ErrorModel:
                         bin_data.dist_max
                     ))
     
+    def _refit_regressions_from_bins(self):
+        """
+        Refit GPEM regression coefficients to predict std directly from distribution bins.
+
+        Instead of: MAE = intercept + slope * d  →  std = MAE * 1.2533 (Normal assumption)
+        We now do:  std = intercept + slope * d  (fitted from per-bin get_std() values)
+
+        This correctly handles non-Normal distributions (Laplace, Logistic, Student-t)
+        because get_std() applies the correct conversion for each distribution type.
+        The regression smooths across bin boundaries naturally.
+        """
+        # Set MAE_TO_STD = 1.0 since regression now predicts std directly
+        self.MAE_TO_STD = 1.0
+
+        # Refit distal (radial) regressions
+        if self.distal_bins:
+            d, s = self._bins_to_distance_std(self.distal_bins)
+            if len(d) >= 2:
+                lin = np.polyfit(d, s, 1)  # [slope, intercept]
+                self.distal_abs_regression = [float(lin[1]), float(lin[0])]
+                if len(d) >= 3:
+                    quad = np.polyfit(d, s, 2)  # [a, b, c]
+                    self.distal_quad_regression = [float(quad[0]), float(quad[1]), float(quad[2])]
+
+        # Refit perpendicular (lateral) regressions
+        if self.perp_bins:
+            d, s = self._bins_to_distance_std(self.perp_bins)
+            if len(d) >= 2:
+                lin = np.polyfit(d, s, 1)
+                self.perp_abs_regression = [float(lin[1]), float(lin[0])]
+                if len(d) >= 3:
+                    quad = np.polyfit(d, s, 2)
+                    self.perp_quad_regression = [float(quad[0]), float(quad[1]), float(quad[2])]
+
+    @staticmethod
+    def _bins_to_distance_std(bins):
+        """Extract (distances, stds) arrays from distribution bins, filtering zeros."""
+        distances = []
+        stds = []
+        for b in bins:
+            center = (b.min_dist + b.max_dist) / 2.0
+            s = b.get_std()
+            if s > 0:
+                distances.append(center)
+                stds.append(s)
+        return np.array(distances), np.array(stds)
+
     def _init_hardcoded_regression(self):
         """Initialize with hardcoded regression parameters (fallback)."""
         # =====================================================================
@@ -433,21 +485,28 @@ class PointPillarsOS1_128ErrorModel:
         """
         Get the average standard deviation for distal error across all distance bins.
         Used by static covariance model (no distance prediction).
+
+        Returns sqrt(mean(variance)) — i.e., averages variances first, then takes sqrt.
+        This is correct because the Kalman filter R matrix needs E[sigma^2], not (E[sigma])^2.
+        By Jensen's inequality, (mean(stds))^2 < mean(stds^2), so averaging stds would
+        underestimate the true average variance.
         """
         if not self.distal_bins:
             return 0.1
-        stds = [bin_obj.get_std() for bin_obj in self.distal_bins]
-        return np.mean(stds)
-    
+        variances = [bin_obj.get_std()**2 for bin_obj in self.distal_bins]
+        return np.sqrt(np.mean(variances))
+
     def get_perpendicular_std_average(self) -> float:
         """
         Get the average standard deviation for perpendicular error across all distance bins.
         Used by static covariance model (no distance prediction).
+
+        Returns sqrt(mean(variance)) — see get_distal_std_average() for rationale.
         """
         if not self.perp_bins:
             return 0.1
-        stds = [bin_obj.get_std() for bin_obj in self.perp_bins]
-        return np.mean(stds)
+        variances = [bin_obj.get_std()**2 for bin_obj in self.perp_bins]
+        return np.sqrt(np.mean(variances))
     
     def get_height_std(self, distance: float) -> float:
         """

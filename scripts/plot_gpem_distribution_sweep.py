@@ -2,8 +2,9 @@
 """
 Plot GPEM Distribution Sweep Results
 
-Visualizes AMOTA comparison and improvement (static vs GPEM linear vs GPEM quadratic) 
-across the 8-step detector+localizer sweep. Two panels: AMOTA comparison and AMOTA improvement %.
+Generates per-filter, per-metric plots (4 filters x 5 metrics = 20 plots)
+matching the penetration sweep output style. Each plot has two panels:
+left = absolute metric comparison, right = improvement vs filter-matched baseline.
 """
 
 import matplotlib
@@ -26,6 +27,60 @@ STEP_LABELS = [
     "33/33/33 det\n50/50 loc",
 ]
 
+# Colors by covariance mode (same as penetration sweep)
+COV_COLORS = {
+    "baseline":  "#95A5A6",
+    "static":    "#E74C3C",
+    "linear":    "#2ECC71",
+    "quadratic": "#9B59B6",
+}
+
+# Variant key -> (covariance_type, filter_group, short_label)
+VARIANT_INFO = {
+    "baseline":         ("baseline",  "Kalman", "Baseline"),
+    "static":           ("static",    "Kalman", "Static"),
+    "gpem_linear":      ("linear",    "Kalman", "GPEM Linear"),
+    "gpem_quadratic":   ("quadratic", "Kalman", "GPEM Quadratic"),
+    "ci_baseline":      ("baseline",  "CI",     "CI + Baseline"),
+    "ci_static":        ("static",    "CI",     "CI + Static"),
+    "ci_gpem_linear":   ("linear",    "CI",     "CI + GPEM Linear"),
+    "ci_gpem_quadratic":("quadratic", "CI",     "CI + GPEM Quadratic"),
+    "akf_baseline":     ("baseline",  "AKF",    "AKF + Baseline"),
+    "akf_static":       ("static",    "AKF",    "AKF + Static"),
+    "akf_gpem_linear":  ("linear",    "AKF",    "AKF + GPEM Linear"),
+    "akf_gpem_quadratic":("quadratic","AKF",    "AKF + GPEM Quadratic"),
+    "pf_baseline":      ("baseline",  "PF",     "PF + Baseline"),
+    "pf_static":        ("static",    "PF",     "PF + Static"),
+    "pf_gpem_linear":   ("linear",    "PF",     "PF + GPEM Linear"),
+    "pf_gpem_quadratic":("quadratic", "PF",     "PF + GPEM Quadratic"),
+}
+
+# Baseline key for each filter group
+FILTER_BASELINES = {
+    "Kalman": "baseline",
+    "CI":     "ci_baseline",
+    "AKF":    "akf_baseline",
+    "PF":     "pf_baseline",
+}
+
+FILTER_ORDER = ["Kalman", "CI", "AKF", "PF"]
+
+METRICS = [
+    ("amota", "AMOTA", True),
+    ("amotp", "AMOTP (m)", False),
+    ("hota", "HOTA", True),
+    ("deta", "DetA", True),
+    ("assa", "AssA", True),
+]
+
+METRIC_KEYS_IN_SUMMARY = {
+    "amota": ("avg_global_amota_mean", "avg_global_amota_std"),
+    "amotp": ("avg_global_amotp_mean", "avg_global_amotp_std"),
+    "hota":  ("avg_hota_mean", "avg_hota_std"),
+    "deta":  ("avg_deta_mean", "avg_deta_std"),
+    "assa":  ("avg_assa_mean", "avg_assa_std"),
+}
+
 
 def plot_distribution_sweep_results(results_dir):
     results_path = Path(results_dir)
@@ -33,17 +88,18 @@ def plot_distribution_sweep_results(results_dir):
 
     if not summary_file.exists():
         print(f"Error: summary.json not found in {results_dir}")
-        print("Pass the path to a GPEM_Distribution_Sweep results folder (e.g. results/GPEM_Distribution_Sweep_<timestamp>).")
         return
 
     with open(summary_file) as f:
         summary = json.load(f)
 
-    # Parse step_N_<variant> where variant is static, gpem, gpem_linear, or gpem_quadratic
+    # Parse gpem_dist_sweep_step_N_<variant>
+    variant_pattern = "|".join(re.escape(k) for k in VARIANT_INFO)
+    regex = re.compile(rf"gpem_dist_sweep_step_(\d+)_({variant_pattern})")
+
     by_step = {}
     for config_name, data in summary.get("results", {}).items():
-        # Try new 3-variant format first: static, gpem_linear, gpem_quadratic
-        m = re.match(r"gpem_dist_sweep_step_(\d+)_(static|gpem_linear|gpem_quadratic|gpem)", config_name)
+        m = regex.match(config_name)
         if m:
             step_idx = int(m.group(1))
             variant = m.group(2)
@@ -57,123 +113,240 @@ def plot_distribution_sweep_results(results_dir):
         return
 
     # Determine which variants are present
-    first_step_data = by_step[steps[0]]
-    has_linear = "gpem_linear" in first_step_data
-    has_quadratic = "gpem_quadratic" in first_step_data
-    has_legacy_gpem = "gpem" in first_step_data and not has_linear
-    
-    # Build model list based on what's available
-    # Format: (variant_key, label, color, marker)
-    models = [("static", "Static Average", "#FF6B6B", "o")]
-    
-    if has_linear:
-        models.append(("gpem_linear", "GPEM Linear", "#4ECDC4", "s"))
-    if has_quadratic:
-        models.append(("gpem_quadratic", "GPEM Quadratic", "#9B59B6", "^"))
-    if has_legacy_gpem:
-        models.append(("gpem", "GPEM Model", "#4ECDC4", "s"))
-    
-    print(f"Found {len(models)} model variants: {[m[1] for m in models]}")
+    all_variants = set()
+    for step_data in by_step.values():
+        all_variants.update(step_data.keys())
 
-    # Extract data for all models
-    model_data = {}
-    for variant_key, label, color, marker in models:
-        try:
-            amota_means = np.array([by_step[s][variant_key]["avg_global_amota_mean"] for s in steps])
-            amota_stds = np.array([by_step[s][variant_key]["avg_global_amota_std"] for s in steps])
-            model_data[variant_key] = {
-                "label": label,
-                "color": color,
-                "marker": marker,
-                "amota_means": amota_means,
-                "amota_stds": amota_stds,
+    # Group available variants by filter
+    filter_groups = {}
+    for variant_key in sorted(all_variants, key=lambda k: list(VARIANT_INFO.keys()).index(k) if k in VARIANT_INFO else 999):
+        if variant_key not in VARIANT_INFO:
+            continue
+        cov_type, filter_name, label = VARIANT_INFO[variant_key]
+        if filter_name not in filter_groups:
+            filter_groups[filter_name] = []
+        filter_groups[filter_name].append(variant_key)
+
+    present_filters = [f for f in FILTER_ORDER if f in filter_groups]
+    print(f"Found {len(all_variants)} variants across {len(present_filters)} filters: {present_filters}")
+
+    # Extract metric arrays for each variant
+    # variant_data[variant_key][metric_key] = {"means": array, "stds": array}
+    variant_data = {}
+    for variant_key in all_variants:
+        if variant_key not in VARIANT_INFO:
+            continue
+        variant_data[variant_key] = {}
+        for metric_key, _, _ in METRICS:
+            mean_key, std_key = METRIC_KEYS_IN_SUMMARY[metric_key]
+            means = []
+            stds = []
+            for s in steps:
+                d = by_step[s].get(variant_key)
+                if d:
+                    means.append(d.get(mean_key, 0.0))
+                    stds.append(d.get(std_key, 0.0))
+                else:
+                    means.append(0.0)
+                    stds.append(0.0)
+            variant_data[variant_key][metric_key] = {
+                "means": np.array(means),
+                "stds": np.array(stds),
             }
-        except KeyError as e:
-            print(f"Warning: Missing data for {variant_key} at some steps: {e}")
 
     x = np.arange(len(steps))
-    labels = [STEP_LABELS[i] if i < len(STEP_LABELS) else f"Step {i}" for i in steps]
+    tick_labels = [STEP_LABELS[i] if i < len(STEP_LABELS) else f"Step {i}" for i in steps]
 
-    title_suffix = "A/B/C" if len(model_data) == 3 else "A/B"
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-    fig.suptitle(
-        f"GPEM Distribution Sweep: {title_suffix} Comparison (AMOTA)",
-        fontsize=14,
-        fontweight="bold",
-    )
+    # Check if HOTA data exists
+    has_hota = False
+    for vk in variant_data:
+        if np.any(variant_data[vk]["hota"]["means"] > 0):
+            has_hota = True
+            break
 
-    # Plot 1: AMOTA comparison
-    ax1 = axes[0]
-    for variant_key, data in model_data.items():
-        ax1.plot(x, data["amota_means"], f'{data["marker"]}-', label=data["label"], 
-                linewidth=2.5, markersize=8, color=data["color"])
-        ax1.fill_between(x, 
-                         data["amota_means"] - data["amota_stds"], 
-                         data["amota_means"] + data["amota_stds"], 
-                         alpha=0.2, color=data["color"])
-    
-    ax1.set_xticks(x)
-    ax1.set_xticklabels(labels, fontsize=8, rotation=15, ha="right")
-    ax1.set_ylabel("Global AMOTA", fontweight="bold", fontsize=11)
-    ax1.set_title("AMOTA Comparison with Standard Deviation", fontweight="bold", fontsize=12)
-    ax1.legend(fontsize=10, loc="best")
-    ax1.grid(True, alpha=0.3)
+    active_metrics = METRICS[:2]  # Always AMOTA, AMOTP
+    if has_hota:
+        active_metrics = METRICS  # All 5
 
-    # Plot 2: AMOTA improvement % (relative to static)
-    ax2 = axes[1]
-    static_data = model_data.get("static")
-    if static_data is None:
-        print("Error: Static model data not found")
-        return
-    
-    improvement_colors = ['#27AE60', '#3498DB', '#E74C3C']
-    color_idx = 0
-    
-    for variant_key, data in model_data.items():
-        if variant_key == "static":
-            continue
-        
-        improvements = (data["amota_means"] - static_data["amota_means"]) / np.maximum(static_data["amota_means"], 0.001) * 100
-        improvement_stds = np.sqrt(
-            (data["amota_stds"] / np.maximum(static_data["amota_means"], 0.001)) ** 2
-            + (data["amota_means"] * static_data["amota_stds"] / np.maximum(static_data["amota_means"] ** 2, 0.001)) ** 2
-        ) * 100
-        
-        ax2.plot(x, improvements, f'{data["marker"]}-', linewidth=2.5, markersize=8, 
-                color=improvement_colors[color_idx], label=f'{data["label"]} vs Static')
-        ax2.fill_between(x, improvements - improvement_stds, improvements + improvement_stds, 
-                        alpha=0.2, color=improvement_colors[color_idx])
-        color_idx += 1
-    
-    ax2.axhline(y=0, color="black", linestyle="--", linewidth=1, alpha=0.5)
-    ax2.set_xticks(x)
-    ax2.set_xticklabels(labels, fontsize=8, rotation=15, ha="right")
-    ax2.set_ylabel("Improvement (%)", fontweight="bold", fontsize=11)
-    ax2.set_title("GPEM AMOTA Improvement over Static", fontweight="bold", fontsize=12)
-    ax2.legend(fontsize=10, loc="best")
-    ax2.grid(True, alpha=0.3)
+    # Generate one figure per (filter, metric)
+    for filter_name in present_filters:
+        group_variants = filter_groups[filter_name]
+        baseline_key = FILTER_BASELINES[filter_name]
 
-    plt.tight_layout()
-    output_file = results_path / "gpem_distribution_sweep_plot.png"
-    plt.savefig(output_file, dpi=150, bbox_inches="tight")
-    print(f"✓ Plot saved to: {output_file}")
+        for metric_key, ylabel, higher_is_better in active_metrics:
+            fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+            fig.suptitle(f'{filter_name} Filter: {ylabel} vs Detector/Localizer Distribution',
+                         fontsize=14, fontweight='bold')
 
-    # Summary statistics
+            # Left: absolute comparison
+            ax_left = axes[0]
+            for vk in group_variants:
+                cov_type, _, label = VARIANT_INFO[vk]
+                color = COV_COLORS[cov_type]
+                means = variant_data[vk][metric_key]["means"]
+                stds = variant_data[vk][metric_key]["stds"]
+                # Short label (strip filter prefix)
+                short = label.replace("CI + ", "").replace("AKF + ", "").replace("PF + ", "")
+                ax_left.plot(x, means, 'o-', label=short,
+                             linewidth=2.5, markersize=8, color=color)
+                ax_left.fill_between(x, means - stds, means + stds,
+                                     alpha=0.15, color=color)
+
+            ax_left.set_xticks(x)
+            ax_left.set_xticklabels(tick_labels, fontsize=7, rotation=15, ha="right")
+            ax_left.set_ylabel(ylabel, fontweight='bold', fontsize=11)
+            ax_left.set_title(f'{ylabel} Comparison', fontweight='bold', fontsize=12)
+            ax_left.legend(fontsize=10, loc='best')
+            ax_left.grid(True, alpha=0.3)
+            if metric_key in ("hota", "deta", "assa"):
+                ax_left.set_ylim(0, 1.05)
+
+            # Right: improvement vs filter-matched baseline
+            ax_right = axes[1]
+            if baseline_key in variant_data:
+                ref_means = variant_data[baseline_key][metric_key]["means"]
+                ref_stds = variant_data[baseline_key][metric_key]["stds"]
+
+                for vk in group_variants:
+                    if vk == baseline_key:
+                        continue
+                    cov_type, _, label = VARIANT_INFO[vk]
+                    color = COV_COLORS[cov_type]
+                    means = variant_data[vk][metric_key]["means"]
+                    stds = variant_data[vk][metric_key]["stds"]
+
+                    if higher_is_better:
+                        improvements = (means - ref_means) / np.maximum(np.abs(ref_means), 1e-9) * 100
+                    else:
+                        improvements = (ref_means - means) / np.maximum(np.abs(ref_means), 1e-9) * 100
+                    imp_stds = np.sqrt(
+                        (stds / np.maximum(np.abs(ref_means), 1e-9))**2 +
+                        (means * ref_stds / np.maximum(ref_means**2, 1e-9))**2
+                    ) * 100
+
+                    short = label.replace("CI + ", "").replace("AKF + ", "").replace("PF + ", "")
+                    ax_right.plot(x, improvements, 'o-', linewidth=2.5, markersize=8,
+                                  color=color, label=short)
+                    ax_right.fill_between(x, improvements - imp_stds, improvements + imp_stds,
+                                          alpha=0.15, color=color)
+
+            ax_right.axhline(y=0, color='black', linestyle='--', linewidth=1, alpha=0.5)
+            ax_right.set_xticks(x)
+            ax_right.set_xticklabels(tick_labels, fontsize=7, rotation=15, ha="right")
+            ax_right.set_ylabel('Improvement (%)', fontweight='bold', fontsize=11)
+            imp_note = "(positive = better)" if higher_is_better else "(positive = closer to GT)"
+            ax_right.set_title(f'{ylabel} Improvement vs Baseline {imp_note}',
+                               fontweight='bold', fontsize=12)
+            ax_right.legend(fontsize=10, loc='best')
+            ax_right.grid(True, alpha=0.3)
+
+            plt.tight_layout()
+            fname = f"gpem_dist_{filter_name.lower()}_{metric_key}_plot.png"
+            output_file = results_path / fname
+            plt.savefig(output_file, dpi=150, bbox_inches='tight')
+            print(f"  {filter_name} {ylabel} -> {fname}")
+            plt.close(fig)
+
+    # Combined cross-filter plots: one line per filter, fixed covariance mode
+    FILTER_COLORS = {
+        "Kalman": "#3498DB",
+        "CI":     "#E74C3C",
+        "AKF":    "#2ECC71",
+        "PF":     "#F39C12",
+    }
+    FILTER_MARKERS = {
+        "Kalman": "o",
+        "CI":     "s",
+        "AKF":    "^",
+        "PF":     "D",
+    }
+    # Which covariance variant key to use per filter for "linear"
+    COMBINED_VARIANTS = {
+        "gpem_linear": {
+            "Kalman": "gpem_linear",
+            "CI":     "ci_gpem_linear",
+            "AKF":    "akf_gpem_linear",
+            "PF":     "pf_gpem_linear",
+        },
+    }
+    for cov_label, filter_map in COMBINED_VARIANTS.items():
+        for metric_key, ylabel, higher_is_better in active_metrics:
+            available = [(f, vk) for f, vk in filter_map.items()
+                         if vk in variant_data and f in present_filters]
+            if len(available) < 2:
+                continue
+
+            fig, ax = plt.subplots(1, 1, figsize=(10, 5))
+            fig.suptitle(f'{ylabel} Across Filters ({cov_label.replace("_", " ").title()})',
+                         fontsize=14, fontweight='bold')
+
+            for filter_name, vk in available:
+                means = variant_data[vk][metric_key]["means"]
+                stds = variant_data[vk][metric_key]["stds"]
+                color = FILTER_COLORS[filter_name]
+                marker = FILTER_MARKERS[filter_name]
+                ax.plot(x, means, marker=marker, linestyle='-', label=filter_name,
+                        linewidth=2.5, markersize=8, color=color)
+                ax.fill_between(x, means - stds, means + stds, alpha=0.15, color=color)
+
+            ax.set_xticks(x)
+            ax.set_xticklabels(tick_labels, fontsize=7, rotation=15, ha="right")
+            ax.set_ylabel(ylabel, fontweight='bold', fontsize=11)
+            ax.set_xlabel('Detector / Localizer Distribution', fontweight='bold', fontsize=11)
+            ax.legend(fontsize=10, loc='best')
+            ax.grid(True, alpha=0.3)
+            if metric_key in ("hota", "deta", "assa"):
+                ax.set_ylim(0, 1.05)
+
+            plt.tight_layout()
+            fname = f"gpem_dist_combined_{cov_label}_{metric_key}_plot.png"
+            output_file = results_path / fname
+            plt.savefig(output_file, dpi=150, bbox_inches='tight')
+            print(f"  Combined {cov_label} {ylabel} -> {fname}")
+            plt.close(fig)
+
+    # Print summary statistics per filter group (matching penetration sweep style)
     print("\n" + "=" * 70)
     print("GPEM DISTRIBUTION SWEEP SUMMARY STATISTICS")
     print("=" * 70)
-    
-    for variant_key, data in model_data.items():
-        print(f"\n{data['label']}:")
-        print(f"  Mean AMOTA: {np.mean(data['amota_means']):.4f} ± {np.mean(data['amota_stds']):.4f}")
-        
-        if variant_key != "static":
-            improvements = (data["amota_means"] - static_data["amota_means"]) / np.maximum(static_data["amota_means"], 0.001) * 100
-            print(f"  Average improvement vs Static: {np.mean(improvements):.2f}%")
-            print(f"  Min improvement: {np.min(improvements):.2f}% (Step {steps[np.argmin(improvements)]})")
-            print(f"  Max improvement: {np.max(improvements):.2f}% (Step {steps[np.argmax(improvements)]})")
-            print(f"  Wins over Static: {sum(1 for imp in improvements if imp > 0)}/{len(steps)} steps")
-    
+
+    for filter_name in present_filters:
+        group_variants = filter_groups[filter_name]
+        baseline_key = FILTER_BASELINES[filter_name]
+
+        for vk in group_variants:
+            cov_type, _, label = VARIANT_INFO[vk]
+            d = variant_data[vk]
+
+            print(f"\n{label}:")
+            print(f"  Mean AMOTA: {np.mean(d['amota']['means']):.4f} +/- {np.mean(d['amota']['stds']):.4f}")
+            print(f"  Mean AMOTP: {np.mean(d['amotp']['means']):.4f}m +/- {np.mean(d['amotp']['stds']):.4f}")
+            if has_hota:
+                print(f"  Mean HOTA:  {np.mean(d['hota']['means']):.4f} +/- {np.mean(d['hota']['stds']):.4f}")
+                print(f"  Mean DetA:  {np.mean(d['deta']['means']):.4f} | Mean AssA: {np.mean(d['assa']['means']):.4f}")
+
+            if vk == baseline_key or baseline_key not in variant_data:
+                continue
+
+            ref_amota = variant_data[baseline_key]["amota"]["means"]
+            ref_amotp = variant_data[baseline_key]["amotp"]["means"]
+            amota_means = d["amota"]["means"]
+            amotp_means = d["amotp"]["means"]
+
+            amota_imp = (amota_means - ref_amota) / np.maximum(np.abs(ref_amota), 1e-9) * 100
+            ref_label = VARIANT_INFO[baseline_key][2]
+            print(f"  AMOTA vs {ref_label}: {np.mean(amota_imp):+.2f}%")
+            print(f"    Min: {np.min(amota_imp):+.2f}% (Step {steps[np.argmin(amota_imp)]})")
+            print(f"    Max: {np.max(amota_imp):+.2f}% (Step {steps[np.argmax(amota_imp)]})")
+            print(f"    Wins: {sum(1 for imp in amota_imp if imp > 0)}/{len(steps)} steps")
+
+            if np.any(ref_amotp > 0):
+                amotp_imp = (ref_amotp - amotp_means) / np.maximum(np.abs(ref_amotp), 1e-9) * 100
+                print(f"  AMOTP vs {ref_label}: {np.mean(amotp_imp):+.2f}% (positive = closer to GT)")
+                print(f"    Min: {np.min(amotp_imp):+.2f}% (Step {steps[np.argmin(amotp_imp)]})")
+                print(f"    Max: {np.max(amotp_imp):+.2f}% (Step {steps[np.argmax(amotp_imp)]})")
+                print(f"    Wins: {sum(1 for imp in amotp_imp if imp > 0)}/{len(steps)} steps")
+
     print("\n" + "=" * 70 + "\n")
 
 
@@ -181,7 +354,7 @@ if __name__ == "__main__":
     if len(sys.argv) < 2 or sys.argv[1].startswith("-"):
         print("Usage: python plot_gpem_distribution_sweep.py <results_directory>")
         print("\nPass the path to an existing GPEM_Distribution_Sweep results folder (containing summary.json).")
-        print("This script only plots; it does not run experiments (no --warmup, --runs, etc.).")
+        print("This script only plots; it does not run experiments.")
         print("\nExample:")
         print("  python plot_gpem_distribution_sweep.py results/GPEM_Distribution_Sweep_2026-02-27_151504")
         sys.exit(1)

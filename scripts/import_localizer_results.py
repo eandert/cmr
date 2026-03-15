@@ -161,14 +161,14 @@ if __name__ == "__main__":
     # Process Kiss ICP
     process_localizer(
         "kiss_icp",
-        "/home/rave/test/localization_project/evaluation_results/kiss_icp_best/kiss_icp_best_all_raw_errors_6dof.csv",
+        "~/test/localization_project/evaluation_results/kiss_icp_best/kiss_icp_best_all_raw_errors_6dof.csv",
         output_dir
     )
     
     # Process ORB-SLAM3
     process_localizer(
         "orb_slam3", 
-        "/home/rave/test/localization_project/evaluation_results/orb_slam3_best/orb_slam3_best_all_raw_errors_6dof.csv",
+        "~/test/localization_project/evaluation_results/orb_slam3_best/orb_slam3_best_all_raw_errors_6dof.csv",
         output_dir
     )
     

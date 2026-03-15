@@ -6,6 +6,7 @@ import sensor
 import localizer
 from config import sensor_type, detector_type
 from metrics import metrics, minimum_safety_envelope, time_to_collision, amota
+from metrics.hota import HotaAccumulator
 import time
 import sensor_fusion
 import csv
@@ -44,7 +45,8 @@ def shutdown_process_pool():
 
 
 def _detection_with_covariance_from_model(det, participant_x, participant_y, participant_yaw,
-                                          detector_error_model, localizer, velocity):
+                                          detector_error_model, localizer, velocity,
+                                          variance_floor=None):
     """
     Return a copy of DetectedObject with error_covariance and dimension stds computed from
     the participant's detector and localizer models at the detection's position.
@@ -52,6 +54,8 @@ def _detection_with_covariance_from_model(det, participant_x, participant_y, par
     - Uses detection position (with error) for distance/angle (what predictor sees)
     - Combines perception covariance + localization covariance (Eq 18: Σ_total = Σ_loc + Σ_perc)
     - detector_error_model and localizer should have matching GPEM mode (static/linear/quadratic)
+    - variance_floor: if set, clamps diagonal elements of total_cov to be >= this value.
+      Prevents over-confidence at close range where GPEM predictions can be very small.
     """
     from gaussians import BivariateGaussian
     import numpy as np
@@ -73,6 +77,11 @@ def _detection_with_covariance_from_model(det, participant_x, participant_y, par
     # Eq 18: total covariance = perception + localization
     total_cov = perc_cov + loc_cov
 
+    # Apply variance floor to prevent over-confidence at close range
+    if variance_floor is not None:
+        total_cov[0, 0] = max(total_cov[0, 0], variance_floor)
+        total_cov[1, 1] = max(total_cov[1, 1], variance_floor)
+
     w_std = detector_error_model.get_width_std(distance)
     l_std = detector_error_model.get_length_std(distance)
 
@@ -89,6 +98,72 @@ def _detection_with_covariance_from_model(det, participant_x, participant_y, par
         error_covariance=total_cov,
         width_std=w_std,
         length_std=l_std,
+    )
+
+
+# Baseline covariance: computed as the true average of all static detector + localizer
+# covariances used in the experiment (weighted by allocation). This replaces the old
+# arbitrary 0.1*I with a principled value derived from the actual error models.
+_BASELINE_COV = None  # Lazy init
+
+
+def _compute_true_average_covariance(detector_allocation, localizer_allocation, max_range, reference_velocity=15.0):
+    """
+    Compute the true average total covariance (perception + localization) as a scalar variance,
+    averaged across all detector and localizer types weighted by their allocation fractions.
+
+    Uses static (distance-averaged) detector models and static localizer covariance at a
+    reference velocity of 15 m/s (typical highway speed).
+
+    Returns np.eye(2) * avg_variance.
+    """
+    import numpy as np
+    from error_models import get_error_model
+
+    total_weighted_var = 0.0
+    total_weight = 0.0
+
+    for det_frac, det_name in detector_allocation:
+        if det_frac <= 0:
+            continue
+        # Map allocation names to error model names (lowercase)
+        em_name = det_name.lower()
+        em = get_error_model(em_name, use_gpem_model=False, max_range=max_range)
+        d_std = em.get_distal_std(30.0)  # Static mode returns distance-averaged value
+        p_std = em.get_perpendicular_std(30.0)
+        perc_var = (d_std**2 + p_std**2) / 2.0  # Average of radial and lateral variance
+
+        for loc_frac, loc_name in localizer_allocation:
+            if loc_frac <= 0:
+                continue
+            from error import ErrorPackage, ErrorType
+            dummy_error = ErrorPackage(ErrorType.LOCALIZATION, 0)
+            loc = localizer.get_localizer(loc_name, dummy_error, use_gpem_model=False)
+            loc_cov = loc.get_localization_covariance(reference_velocity, 0.0)
+            loc_var = (loc_cov[0, 0] + loc_cov[1, 1]) / 2.0
+
+            weight = det_frac * loc_frac
+            total_weighted_var += weight * (perc_var + loc_var)
+            total_weight += weight
+
+    avg_var = total_weighted_var / max(total_weight, 1e-9)
+    return np.eye(2) * avg_var
+
+def _detection_with_flat_covariance(det, flat_cov):
+    """Return a copy of DetectedObject with a fixed flat covariance (baseline mode)."""
+    return sensor.DetectedObject(
+        vehicle_id=det.vehicle_id,
+        vehicle_type=det.type,
+        detected_bbox=det.detected_bbox,
+        centroid=det.centroid,
+        width=det.dimensions[0],
+        length=det.dimensions[1],
+        angle=det.angle,
+        expected_error_gaussian=None,
+        velocity_vector=det.velocity_vector,
+        error_covariance=flat_cov,
+        width_std=0.3,  # Flat default
+        length_std=0.3,
     )
 
 
@@ -304,18 +379,65 @@ def run_simulation(config):
     use_trust_scoring = config.get("use_trust_scoring", True)
     gpem_triple_fusion = config.get("gpem_triple_fusion", False)
     _det_max_range = config.get("detector_max_range", 70.0)
+    use_static_matching = config.get("use_static_matching", False)
+    _variance_floor = config.get("variance_floor", None)  # Min diagonal variance for R matrix
     if gpem_triple_fusion:
         # One SUMO run, three fusion instances (static, GPEM linear, GPEM quadratic) for synced A/B/C comparison
         # Error models are loaded per-participant (by detector type) in the loop
         # Enable passthrough_covariance to bypass Kalman filtering of covariance
         # This ensures GPEM predictions flow through directly to global fusion
-        global_fusion_static = sensor_fusion.Fusion(sensor_fusion.max_id, use_trust_scoring=False, passthrough_covariance=True)
-        global_fusion_linear = sensor_fusion.Fusion(sensor_fusion.max_id, use_trust_scoring=False, passthrough_covariance=True)
-        global_fusion_quadratic = sensor_fusion.Fusion(sensor_fusion.max_id, use_trust_scoring=False, passthrough_covariance=True)
+        #
+        # If use_static_matching=True, all three streams use the same static covariance
+        # for matching (Mahalanobis gating) but their own covariance for Kalman fusion.
+        # This isolates whether matching or fusion drives the GPEM difference.
+        import numpy as np
+        static_match_cov = None
+        if use_static_matching:
+            # Compute average static matching covariance from the static error model at ~30m
+            from error_models import get_error_model
+            _em_static_ref = get_error_model("bev_fusion", use_gpem_model=False, max_range=_det_max_range)
+            d_std = _em_static_ref.get_distal_std(30.0)
+            p_std = _em_static_ref.get_perpendicular_std(30.0)
+            static_match_cov = np.diag([max(d_std, p_std)**2, max(d_std, p_std)**2])
+        global_fusion_static = sensor_fusion.Fusion(sensor_fusion.max_id, use_trust_scoring=False, passthrough_covariance=True, static_matching_cov=static_match_cov)
+        global_fusion_linear = sensor_fusion.Fusion(sensor_fusion.max_id, use_trust_scoring=False, passthrough_covariance=True, static_matching_cov=static_match_cov)
+        global_fusion_quadratic = sensor_fusion.Fusion(sensor_fusion.max_id, use_trust_scoring=False, passthrough_covariance=True, static_matching_cov=static_match_cov)
+        global_fusion_baseline = sensor_fusion.Fusion(sensor_fusion.max_id, use_trust_scoring=False, passthrough_covariance=True, static_matching_cov=static_match_cov)
+        # CI filter streams: same covariance inputs as Kalman streams but use CovarianceIntersectionFilter
+        from filters.covariance_intersection import CovarianceIntersectionFilter
+        global_fusion_ci_static = sensor_fusion.Fusion(sensor_fusion.max_id, use_trust_scoring=False, passthrough_covariance=True, static_matching_cov=static_match_cov, filter_class=CovarianceIntersectionFilter)
+        global_fusion_ci_linear = sensor_fusion.Fusion(sensor_fusion.max_id, use_trust_scoring=False, passthrough_covariance=True, static_matching_cov=static_match_cov, filter_class=CovarianceIntersectionFilter)
+        global_fusion_ci_quadratic = sensor_fusion.Fusion(sensor_fusion.max_id, use_trust_scoring=False, passthrough_covariance=True, static_matching_cov=static_match_cov, filter_class=CovarianceIntersectionFilter)
+        global_fusion_ci_baseline = sensor_fusion.Fusion(sensor_fusion.max_id, use_trust_scoring=False, passthrough_covariance=True, static_matching_cov=static_match_cov, filter_class=CovarianceIntersectionFilter)
+        # Adaptive Kalman filter streams: same covariance inputs but with online Q adaptation
+        from filters.adaptive_kalman import AdaptiveKalman
+        global_fusion_akf_static = sensor_fusion.Fusion(sensor_fusion.max_id, use_trust_scoring=False, passthrough_covariance=True, static_matching_cov=static_match_cov, filter_class=AdaptiveKalman)
+        global_fusion_akf_linear = sensor_fusion.Fusion(sensor_fusion.max_id, use_trust_scoring=False, passthrough_covariance=True, static_matching_cov=static_match_cov, filter_class=AdaptiveKalman)
+        global_fusion_akf_quadratic = sensor_fusion.Fusion(sensor_fusion.max_id, use_trust_scoring=False, passthrough_covariance=True, static_matching_cov=static_match_cov, filter_class=AdaptiveKalman)
+        global_fusion_akf_baseline = sensor_fusion.Fusion(sensor_fusion.max_id, use_trust_scoring=False, passthrough_covariance=True, static_matching_cov=static_match_cov, filter_class=AdaptiveKalman)
+        # Particle filter streams: SIR particle filter
+        from filters.particle_filter import ParticleFilter
+        global_fusion_pf_static = sensor_fusion.Fusion(sensor_fusion.max_id, use_trust_scoring=False, passthrough_covariance=True, static_matching_cov=static_match_cov, filter_class=ParticleFilter)
+        global_fusion_pf_linear = sensor_fusion.Fusion(sensor_fusion.max_id, use_trust_scoring=False, passthrough_covariance=True, static_matching_cov=static_match_cov, filter_class=ParticleFilter)
+        global_fusion_pf_quadratic = sensor_fusion.Fusion(sensor_fusion.max_id, use_trust_scoring=False, passthrough_covariance=True, static_matching_cov=static_match_cov, filter_class=ParticleFilter)
+        global_fusion_pf_baseline = sensor_fusion.Fusion(sensor_fusion.max_id, use_trust_scoring=False, passthrough_covariance=True, static_matching_cov=static_match_cov, filter_class=ParticleFilter)
+        # Compute baseline covariance as the true weighted average of all static detector +
+        # localizer covariances used in this experiment (principled, not arbitrary)
+        det_alloc = config.get("detector_allocation", [(1.0, "BEV_FUSION")])
+        loc_alloc = config.get("localizer_allocation", [(1.0, "CT_ICP")])
+        baseline_cov = _compute_true_average_covariance(det_alloc, loc_alloc, _det_max_range)
+        _baseline_var = baseline_cov[0, 0]
+        print(f"    Baseline covariance: {_baseline_var:.4f} (std={np.sqrt(_baseline_var):.4f}m) — computed from detector+localizer models")
+        if _variance_floor is not None:
+            print(f"    Variance floor: {_variance_floor:.4f} (std={np.sqrt(_variance_floor):.4f}m)")
         global_fusion = None  # not used when triple_fusion
     else:
         global_fusion = sensor_fusion.Fusion(sensor_fusion.max_id, use_trust_scoring=use_trust_scoring)
-        global_fusion_static = global_fusion_linear = global_fusion_quadratic = None
+        global_fusion_static = global_fusion_linear = global_fusion_quadratic = global_fusion_baseline = None
+        global_fusion_ci_static = global_fusion_ci_linear = global_fusion_ci_quadratic = global_fusion_ci_baseline = None
+        global_fusion_akf_static = global_fusion_akf_linear = global_fusion_akf_quadratic = global_fusion_akf_baseline = None
+        global_fusion_pf_static = global_fusion_pf_linear = global_fusion_pf_quadratic = global_fusion_pf_baseline = None
+        baseline_cov = None
 
     # Track the IDs of all polygons
     polygon_ids = []
@@ -367,12 +489,51 @@ def run_simulation(config):
         total_global_metrics_static = create_metrics_dict()
         total_global_metrics_linear = create_metrics_dict()
         total_global_metrics_quadratic = create_metrics_dict()
+        total_global_metrics_baseline = create_metrics_dict()
+        total_global_metrics_ci_static = create_metrics_dict()
+        total_global_metrics_ci_linear = create_metrics_dict()
+        total_global_metrics_ci_quadratic = create_metrics_dict()
+        total_global_metrics_ci_baseline = create_metrics_dict()
+        total_global_metrics_akf_static = create_metrics_dict()
+        total_global_metrics_akf_linear = create_metrics_dict()
+        total_global_metrics_akf_quadratic = create_metrics_dict()
+        total_global_metrics_akf_baseline = create_metrics_dict()
+        total_global_metrics_pf_static = create_metrics_dict()
+        total_global_metrics_pf_linear = create_metrics_dict()
+        total_global_metrics_pf_quadratic = create_metrics_dict()
+        total_global_metrics_pf_baseline = create_metrics_dict()
         triple_global_amota_frames_count_static = 0
         triple_global_amota_frames_count_linear = 0
         triple_global_amota_frames_count_quadratic = 0
+        triple_global_amota_frames_count_baseline = 0
+        triple_global_amota_frames_count_ci_static = 0
+        triple_global_amota_frames_count_ci_linear = 0
+        triple_global_amota_frames_count_ci_quadratic = 0
+        triple_global_amota_frames_count_ci_baseline = 0
+        triple_global_amota_frames_count_akf_static = 0
+        triple_global_amota_frames_count_akf_linear = 0
+        triple_global_amota_frames_count_akf_quadratic = 0
+        triple_global_amota_frames_count_akf_baseline = 0
+        triple_global_amota_frames_count_pf_static = 0
+        triple_global_amota_frames_count_pf_linear = 0
+        triple_global_amota_frames_count_pf_quadratic = 0
+        triple_global_amota_frames_count_pf_baseline = 0
         triple_global_amotp_frames_count_static = 0
         triple_global_amotp_frames_count_linear = 0
         triple_global_amotp_frames_count_quadratic = 0
+        triple_global_amotp_frames_count_baseline = 0
+        triple_global_amotp_frames_count_ci_static = 0
+        triple_global_amotp_frames_count_ci_linear = 0
+        triple_global_amotp_frames_count_ci_quadratic = 0
+        triple_global_amotp_frames_count_ci_baseline = 0
+        triple_global_amotp_frames_count_akf_static = 0
+        triple_global_amotp_frames_count_akf_linear = 0
+        triple_global_amotp_frames_count_akf_quadratic = 0
+        triple_global_amotp_frames_count_akf_baseline = 0
+        triple_global_amotp_frames_count_pf_static = 0
+        triple_global_amotp_frames_count_pf_linear = 0
+        triple_global_amotp_frames_count_pf_quadratic = 0
+        triple_global_amotp_frames_count_pf_baseline = 0
     total_active_cavs = 0
     cav_amota_frames_count = 0 # New counter for frames where CAV AMOTA is calculated
     cis_amota_frames_count = 0 # New counter for frames where CIS AMOTA is calculated
@@ -380,6 +541,25 @@ def run_simulation(config):
     cav_amotp_frames_count = 0 # Counter for frames where CAV AMOTP is calculated
     cis_amotp_frames_count = 0 # Counter for frames where CIS AMOTP is calculated
     global_amotp_frames_count = 0 # Counter for frames where Global AMOTP is calculated
+    # HOTA accumulators (require cross-frame tracking data)
+    global_hota_acc = HotaAccumulator()
+    if gpem_triple_fusion:
+        hota_acc_baseline = HotaAccumulator()
+        hota_acc_static = HotaAccumulator()
+        hota_acc_linear = HotaAccumulator()
+        hota_acc_quadratic = HotaAccumulator()
+        hota_acc_ci_baseline = HotaAccumulator()
+        hota_acc_ci_static = HotaAccumulator()
+        hota_acc_ci_linear = HotaAccumulator()
+        hota_acc_ci_quadratic = HotaAccumulator()
+        hota_acc_akf_baseline = HotaAccumulator()
+        hota_acc_akf_static = HotaAccumulator()
+        hota_acc_akf_linear = HotaAccumulator()
+        hota_acc_akf_quadratic = HotaAccumulator()
+        hota_acc_pf_baseline = HotaAccumulator()
+        hota_acc_pf_static = HotaAccumulator()
+        hota_acc_pf_linear = HotaAccumulator()
+        hota_acc_pf_quadratic = HotaAccumulator()
     recorded_steps = 0  # Counter for steps where metrics are recorded (after warmup)
     
     # Calculate recording end step
@@ -589,16 +769,33 @@ def run_simulation(config):
                     em_static, em_linear, em_quadratic = _get_detector_error_models(detector_model_name, _det_max_range)
                     # Get localizer variants (CIS uses localizer for covariance even if stationary)
                     loc_static, loc_linear, loc_quadratic = _get_localizer_variants(cis_instance.localizer)
-                    list_static = [_detection_with_covariance_from_model(d, px, py, p_yaw, em_static, loc_static, velocity) for d in detected_objects_for_metrics]
-                    list_linear = [_detection_with_covariance_from_model(d, px, py, p_yaw, em_linear, loc_linear, velocity) for d in detected_objects_for_metrics]
-                    list_quad = [_detection_with_covariance_from_model(d, px, py, p_yaw, em_quadratic, loc_quadratic, velocity) for d in detected_objects_for_metrics]
+                    list_static = [_detection_with_covariance_from_model(d, px, py, p_yaw, em_static, loc_static, velocity, variance_floor=_variance_floor) for d in detected_objects_for_metrics]
+                    list_linear = [_detection_with_covariance_from_model(d, px, py, p_yaw, em_linear, loc_linear, velocity, variance_floor=_variance_floor) for d in detected_objects_for_metrics]
+                    list_quad = [_detection_with_covariance_from_model(d, px, py, p_yaw, em_quadratic, loc_quadratic, velocity, variance_floor=_variance_floor) for d in detected_objects_for_metrics]
+                    list_baseline = [_detection_with_flat_covariance(d, baseline_cov) for d in detected_objects_for_metrics]
                     global_fusion_static.processDetectionFrame(simulation_time_now, list_static, config["cleanup_time"], source_participant_id=cis_idx)
                     global_fusion_linear.processDetectionFrame(simulation_time_now, list_linear, config["cleanup_time"], source_participant_id=cis_idx)
                     global_fusion_quadratic.processDetectionFrame(simulation_time_now, list_quad, config["cleanup_time"], source_participant_id=cis_idx)
+                    global_fusion_baseline.processDetectionFrame(simulation_time_now, list_baseline, config["cleanup_time"], source_participant_id=cis_idx)
+                    # CI filter streams: same covariance data, different filter algorithm
+                    global_fusion_ci_static.processDetectionFrame(simulation_time_now, list_static, config["cleanup_time"], source_participant_id=cis_idx)
+                    global_fusion_ci_linear.processDetectionFrame(simulation_time_now, list_linear, config["cleanup_time"], source_participant_id=cis_idx)
+                    global_fusion_ci_quadratic.processDetectionFrame(simulation_time_now, list_quad, config["cleanup_time"], source_participant_id=cis_idx)
+                    global_fusion_ci_baseline.processDetectionFrame(simulation_time_now, list_baseline, config["cleanup_time"], source_participant_id=cis_idx)
+                    # Adaptive Kalman filter streams: same covariance data, adaptive Q
+                    global_fusion_akf_static.processDetectionFrame(simulation_time_now, list_static, config["cleanup_time"], source_participant_id=cis_idx)
+                    global_fusion_akf_linear.processDetectionFrame(simulation_time_now, list_linear, config["cleanup_time"], source_participant_id=cis_idx)
+                    global_fusion_akf_quadratic.processDetectionFrame(simulation_time_now, list_quad, config["cleanup_time"], source_participant_id=cis_idx)
+                    global_fusion_akf_baseline.processDetectionFrame(simulation_time_now, list_baseline, config["cleanup_time"], source_participant_id=cis_idx)
+                    # Particle filter streams: SIR particle filter
+                    global_fusion_pf_static.processDetectionFrame(simulation_time_now, list_static, config["cleanup_time"], source_participant_id=cis_idx)
+                    global_fusion_pf_linear.processDetectionFrame(simulation_time_now, list_linear, config["cleanup_time"], source_participant_id=cis_idx)
+                    global_fusion_pf_quadratic.processDetectionFrame(simulation_time_now, list_quad, config["cleanup_time"], source_participant_id=cis_idx)
+                    global_fusion_pf_baseline.processDetectionFrame(simulation_time_now, list_baseline, config["cleanup_time"], source_participant_id=cis_idx)
                 else:
                     # Pass CIS participant ID (0, 1, 2, ...) for trust scoring
                     global_fusion.processDetectionFrame(simulation_time_now, detected_objects_for_metrics, config["cleanup_time"], source_participant_id=cis_idx)
-        
+
         cis_detection_time = time.time() - cis_detection_start_time
 
         # ==================== CAV DETECTION ====================
@@ -684,43 +881,114 @@ def run_simulation(config):
                         em_static, em_linear, em_quadratic = _get_detector_error_models(detector_model_name, _det_max_range)
                         # Get localizer variants
                         loc_static, loc_linear, loc_quadratic = _get_localizer_variants(cav_instance.localizer)
-                        list_static = [_detection_with_covariance_from_model(d, px, py, p_yaw, em_static, loc_static, velocity) for d in detected_objects_for_metrics]
-                        list_linear = [_detection_with_covariance_from_model(d, px, py, p_yaw, em_linear, loc_linear, velocity) for d in detected_objects_for_metrics]
-                        list_quad = [_detection_with_covariance_from_model(d, px, py, p_yaw, em_quadratic, loc_quadratic, velocity) for d in detected_objects_for_metrics]
+                        list_static = [_detection_with_covariance_from_model(d, px, py, p_yaw, em_static, loc_static, velocity, variance_floor=_variance_floor) for d in detected_objects_for_metrics]
+                        list_linear = [_detection_with_covariance_from_model(d, px, py, p_yaw, em_linear, loc_linear, velocity, variance_floor=_variance_floor) for d in detected_objects_for_metrics]
+                        list_quad = [_detection_with_covariance_from_model(d, px, py, p_yaw, em_quadratic, loc_quadratic, velocity, variance_floor=_variance_floor) for d in detected_objects_for_metrics]
+                        list_baseline = [_detection_with_flat_covariance(d, baseline_cov) for d in detected_objects_for_metrics]
                         global_fusion_static.processDetectionFrame(simulation_time_now, list_static, config["cleanup_time"], source_participant_id=num_cis + cav_idx)
                         global_fusion_linear.processDetectionFrame(simulation_time_now, list_linear, config["cleanup_time"], source_participant_id=num_cis + cav_idx)
                         global_fusion_quadratic.processDetectionFrame(simulation_time_now, list_quad, config["cleanup_time"], source_participant_id=num_cis + cav_idx)
+                        global_fusion_baseline.processDetectionFrame(simulation_time_now, list_baseline, config["cleanup_time"], source_participant_id=num_cis + cav_idx)
+                        # CI filter streams: same covariance data, different filter algorithm
+                        global_fusion_ci_static.processDetectionFrame(simulation_time_now, list_static, config["cleanup_time"], source_participant_id=num_cis + cav_idx)
+                        global_fusion_ci_linear.processDetectionFrame(simulation_time_now, list_linear, config["cleanup_time"], source_participant_id=num_cis + cav_idx)
+                        global_fusion_ci_quadratic.processDetectionFrame(simulation_time_now, list_quad, config["cleanup_time"], source_participant_id=num_cis + cav_idx)
+                        global_fusion_ci_baseline.processDetectionFrame(simulation_time_now, list_baseline, config["cleanup_time"], source_participant_id=num_cis + cav_idx)
+                        # Adaptive Kalman filter streams: same covariance data, adaptive Q
+                        global_fusion_akf_static.processDetectionFrame(simulation_time_now, list_static, config["cleanup_time"], source_participant_id=num_cis + cav_idx)
+                        global_fusion_akf_linear.processDetectionFrame(simulation_time_now, list_linear, config["cleanup_time"], source_participant_id=num_cis + cav_idx)
+                        global_fusion_akf_quadratic.processDetectionFrame(simulation_time_now, list_quad, config["cleanup_time"], source_participant_id=num_cis + cav_idx)
+                        global_fusion_akf_baseline.processDetectionFrame(simulation_time_now, list_baseline, config["cleanup_time"], source_participant_id=num_cis + cav_idx)
+                        # Particle filter streams: SIR particle filter
+                        global_fusion_pf_static.processDetectionFrame(simulation_time_now, list_static, config["cleanup_time"], source_participant_id=num_cis + cav_idx)
+                        global_fusion_pf_linear.processDetectionFrame(simulation_time_now, list_linear, config["cleanup_time"], source_participant_id=num_cis + cav_idx)
+                        global_fusion_pf_quadratic.processDetectionFrame(simulation_time_now, list_quad, config["cleanup_time"], source_participant_id=num_cis + cav_idx)
+                        global_fusion_pf_baseline.processDetectionFrame(simulation_time_now, list_baseline, config["cleanup_time"], source_participant_id=num_cis + cav_idx)
                 else:
                     # Pass CAV participant ID (num_cis + 0, num_cis + 1, ...) for trust scoring
                     global_fusion.processDetectionFrame(simulation_time_now, detected_objects_for_metrics, config["cleanup_time"], source_participant_id=num_cis + cav_idx)
-        
+
         cav_detection_time = time.time() - cav_detection_start_time
 
         # ==================== GLOBAL FUSION ====================
         global_fusion_start_time = time.time()
         if do_global_fusion:
             if gpem_triple_fusion:
-                # Fuse all three (no perception monitor); record metrics for each
+                # Fuse all four (no perception monitor); record metrics for each
                 _, global_detection_result_s, _, _ = global_fusion_static.fuseDetectionFrame(simulation_time_now, monitor=False)
                 _, global_detection_result_l, _, _ = global_fusion_linear.fuseDetectionFrame(simulation_time_now, monitor=False)
                 _, global_detection_result_q, _, _ = global_fusion_quadratic.fuseDetectionFrame(simulation_time_now, monitor=False)
+                _, global_detection_result_b, _, _ = global_fusion_baseline.fuseDetectionFrame(simulation_time_now, monitor=False)
+                _, global_detection_result_ci_s, _, _ = global_fusion_ci_static.fuseDetectionFrame(simulation_time_now, monitor=False)
+                _, global_detection_result_ci_l, _, _ = global_fusion_ci_linear.fuseDetectionFrame(simulation_time_now, monitor=False)
+                _, global_detection_result_ci_q, _, _ = global_fusion_ci_quadratic.fuseDetectionFrame(simulation_time_now, monitor=False)
+                _, global_detection_result_ci_b, _, _ = global_fusion_ci_baseline.fuseDetectionFrame(simulation_time_now, monitor=False)
+                _, global_detection_result_akf_s, _, _ = global_fusion_akf_static.fuseDetectionFrame(simulation_time_now, monitor=False)
+                _, global_detection_result_akf_l, _, _ = global_fusion_akf_linear.fuseDetectionFrame(simulation_time_now, monitor=False)
+                _, global_detection_result_akf_q, _, _ = global_fusion_akf_quadratic.fuseDetectionFrame(simulation_time_now, monitor=False)
+                _, global_detection_result_akf_b, _, _ = global_fusion_akf_baseline.fuseDetectionFrame(simulation_time_now, monitor=False)
+                _, global_detection_result_pf_s, _, _ = global_fusion_pf_static.fuseDetectionFrame(simulation_time_now, monitor=False)
+                _, global_detection_result_pf_l, _, _ = global_fusion_pf_linear.fuseDetectionFrame(simulation_time_now, monitor=False)
+                _, global_detection_result_pf_q, _, _ = global_fusion_pf_quadratic.fuseDetectionFrame(simulation_time_now, monitor=False)
+                _, global_detection_result_pf_b, _, _ = global_fusion_pf_baseline.fuseDetectionFrame(simulation_time_now, monitor=False)
                 if is_recording:
                     all_detectable_ground_truth = list(unique_detectable_ground_truth.values())
-                    triple_amota_counts = [triple_global_amota_frames_count_static, triple_global_amota_frames_count_linear, triple_global_amota_frames_count_quadratic]
-                    triple_amotp_counts = [triple_global_amotp_frames_count_static, triple_global_amotp_frames_count_linear, triple_global_amotp_frames_count_quadratic]
+                    triple_amota_counts = [
+                        triple_global_amota_frames_count_baseline, triple_global_amota_frames_count_static,
+                        triple_global_amota_frames_count_linear, triple_global_amota_frames_count_quadratic,
+                        triple_global_amota_frames_count_ci_baseline, triple_global_amota_frames_count_ci_static,
+                        triple_global_amota_frames_count_ci_linear, triple_global_amota_frames_count_ci_quadratic,
+                        triple_global_amota_frames_count_akf_baseline, triple_global_amota_frames_count_akf_static,
+                        triple_global_amota_frames_count_akf_linear, triple_global_amota_frames_count_akf_quadratic,
+                        triple_global_amota_frames_count_pf_baseline, triple_global_amota_frames_count_pf_static,
+                        triple_global_amota_frames_count_pf_linear, triple_global_amota_frames_count_pf_quadratic,
+                    ]
+                    triple_amotp_counts = [
+                        triple_global_amotp_frames_count_baseline, triple_global_amotp_frames_count_static,
+                        triple_global_amotp_frames_count_linear, triple_global_amotp_frames_count_quadratic,
+                        triple_global_amotp_frames_count_ci_baseline, triple_global_amotp_frames_count_ci_static,
+                        triple_global_amotp_frames_count_ci_linear, triple_global_amotp_frames_count_ci_quadratic,
+                        triple_global_amotp_frames_count_akf_baseline, triple_global_amotp_frames_count_akf_static,
+                        triple_global_amotp_frames_count_akf_linear, triple_global_amotp_frames_count_akf_quadratic,
+                        triple_global_amotp_frames_count_pf_baseline, triple_global_amotp_frames_count_pf_static,
+                        triple_global_amotp_frames_count_pf_linear, triple_global_amotp_frames_count_pf_quadratic,
+                    ]
+                    triple_hota_accs = [
+                        hota_acc_baseline, hota_acc_static, hota_acc_linear, hota_acc_quadratic,
+                        hota_acc_ci_baseline, hota_acc_ci_static, hota_acc_ci_linear, hota_acc_ci_quadratic,
+                        hota_acc_akf_baseline, hota_acc_akf_static, hota_acc_akf_linear, hota_acc_akf_quadratic,
+                        hota_acc_pf_baseline, hota_acc_pf_static, hota_acc_pf_linear, hota_acc_pf_quadratic,
+                    ]
                     for idx, (global_detection_result, total_X) in enumerate([
+                        (global_detection_result_b, total_global_metrics_baseline),
                         (global_detection_result_s, total_global_metrics_static),
                         (global_detection_result_l, total_global_metrics_linear),
                         (global_detection_result_q, total_global_metrics_quadratic),
+                        (global_detection_result_ci_b, total_global_metrics_ci_baseline),
+                        (global_detection_result_ci_s, total_global_metrics_ci_static),
+                        (global_detection_result_ci_l, total_global_metrics_ci_linear),
+                        (global_detection_result_ci_q, total_global_metrics_ci_quadratic),
+                        (global_detection_result_akf_b, total_global_metrics_akf_baseline),
+                        (global_detection_result_akf_s, total_global_metrics_akf_static),
+                        (global_detection_result_akf_l, total_global_metrics_akf_linear),
+                        (global_detection_result_akf_q, total_global_metrics_akf_quadratic),
+                        (global_detection_result_pf_b, total_global_metrics_pf_baseline),
+                        (global_detection_result_pf_s, total_global_metrics_pf_static),
+                        (global_detection_result_pf_l, total_global_metrics_pf_linear),
+                        (global_detection_result_pf_q, total_global_metrics_pf_quadratic),
                     ]):
-                        amota_score = amota.calculate_amota(global_detection_result, all_detectable_ground_truth)
-                        if amota_score != 0.0:
+                        # Filter to only tracks updated this frame (exclude stale predicted-only tracks)
+                        fresh_detections = [d for d in global_detection_result if hasattr(d, 'last_measurement') and abs(d.last_measurement - simulation_time_now) < 0.05]
+                        amota_score = amota.calculate_amota(fresh_detections, all_detectable_ground_truth)
+                        if amota_score is not None:
                             total_X["amota"] += amota_score
                             triple_amota_counts[idx] += 1
-                        if len(global_detection_result) > 0:
-                            amotp_score = amota.calculate_amotp(global_detection_result, all_detectable_ground_truth)
+                        if len(fresh_detections) > 0:
+                            amotp_score = amota.calculate_amotp(fresh_detections, all_detectable_ground_truth)
                             total_X["amotp"] += amotp_score
                             triple_amotp_counts[idx] += 1
+                        # Feed HOTA accumulator with fresh detections vs GT
+                        triple_hota_accs[idx].update(fresh_detections, all_detectable_ground_truth)
                         for cav_id in cav_id_list:
                             cav_gt_obj = ground_truth_cache.get(cav_id)
                             if cav_gt_obj is None:
@@ -728,8 +996,22 @@ def run_simulation(config):
                             global_metrics = metrics.calculate_violations(cav_gt_obj, unique_detectable_ground_truth, global_detection_result, category="Aggressive", calc_amota=False, av_ids=av_ids)
                             for key in total_X:
                                 total_X[key] += global_metrics.get(key, 0)
-                    triple_global_amota_frames_count_static, triple_global_amota_frames_count_linear, triple_global_amota_frames_count_quadratic = triple_amota_counts
-                    triple_global_amotp_frames_count_static, triple_global_amotp_frames_count_linear, triple_global_amotp_frames_count_quadratic = triple_amotp_counts
+                    (triple_global_amota_frames_count_baseline, triple_global_amota_frames_count_static,
+                     triple_global_amota_frames_count_linear, triple_global_amota_frames_count_quadratic,
+                     triple_global_amota_frames_count_ci_baseline, triple_global_amota_frames_count_ci_static,
+                     triple_global_amota_frames_count_ci_linear, triple_global_amota_frames_count_ci_quadratic,
+                     triple_global_amota_frames_count_akf_baseline, triple_global_amota_frames_count_akf_static,
+                     triple_global_amota_frames_count_akf_linear, triple_global_amota_frames_count_akf_quadratic,
+                     triple_global_amota_frames_count_pf_baseline, triple_global_amota_frames_count_pf_static,
+                     triple_global_amota_frames_count_pf_linear, triple_global_amota_frames_count_pf_quadratic) = triple_amota_counts
+                    (triple_global_amotp_frames_count_baseline, triple_global_amotp_frames_count_static,
+                     triple_global_amotp_frames_count_linear, triple_global_amotp_frames_count_quadratic,
+                     triple_global_amotp_frames_count_ci_baseline, triple_global_amotp_frames_count_ci_static,
+                     triple_global_amotp_frames_count_ci_linear, triple_global_amotp_frames_count_ci_quadratic,
+                     triple_global_amotp_frames_count_akf_baseline, triple_global_amotp_frames_count_akf_static,
+                     triple_global_amotp_frames_count_akf_linear, triple_global_amotp_frames_count_akf_quadratic,
+                     triple_global_amotp_frames_count_pf_baseline, triple_global_amotp_frames_count_pf_static,
+                     triple_global_amotp_frames_count_pf_linear, triple_global_amotp_frames_count_pf_quadratic) = triple_amotp_counts
             else:
                 # Single global fusion (existing path)
                 # Enable monitor=True for cooperative perception scoring
@@ -769,21 +1051,27 @@ def run_simulation(config):
                     # Convert the dictionary of all detectable ground truth objects to a list
                     all_detectable_ground_truth = list(unique_detectable_ground_truth.values())
 
+                    # Filter to only tracks updated this frame (exclude stale predicted-only tracks)
+                    fresh_detections = [d for d in global_detection_result if hasattr(d, 'last_measurement') and abs(d.last_measurement - simulation_time_now) < 0.05]
+
                     # Calculate AMOTA using unique detectable ground truth
-                    amota_score = amota.calculate_amota(global_detection_result, all_detectable_ground_truth)
+                    amota_score = amota.calculate_amota(fresh_detections, all_detectable_ground_truth)
 
                     # Add the AMOTA score to the global metrics here because we only want it one time
-                    if amota_score != 0.0:
+                    if amota_score is not None:
                         total_global_metrics["amota"] += amota_score
                         global_amota_frames_count += 1
 
-                    # Calculate AMOTP (precision) using unique detectable ground truth
-                    amotp_score = amota.calculate_amotp(global_detection_result, all_detectable_ground_truth)
+                    # Calculate AMOTP (localization error) using unique detectable ground truth
+                    amotp_score = amota.calculate_amotp(fresh_detections, all_detectable_ground_truth)
 
-                    # Add the AMOTP score whenever we have detections (precision is defined); 0 is valid
-                    if len(global_detection_result) > 0:
+                    # Add the AMOTP score whenever we have detections
+                    if len(fresh_detections) > 0:
                         total_global_metrics["amotp"] += amotp_score
                         global_amotp_frames_count += 1
+
+                    # Feed HOTA accumulator
+                    global_hota_acc.update(fresh_detections, all_detectable_ground_truth)
 
                     # Calculate violations for the global fusion for each CAV
                     for cav_id in cav_id_list:
@@ -879,6 +1167,8 @@ def run_simulation(config):
         "perception_scores": final_perception_scores,
         "perception_anomalies": perception_anomalies,
         "perception_summary": perception_summary,
+        # HOTA metrics (computed from accumulated cross-frame data)
+        "global_hota": global_hota_acc.compute(),
     }
     # When gpem_triple_fusion, add triple outputs (same run, three synced result sets)
     if gpem_triple_fusion:
@@ -886,16 +1176,73 @@ def run_simulation(config):
             "static": total_global_metrics_static,
             "gpem_linear": total_global_metrics_linear,
             "gpem_quadratic": total_global_metrics_quadratic,
+            "baseline": total_global_metrics_baseline,
+            "ci_static": total_global_metrics_ci_static,
+            "ci_gpem_linear": total_global_metrics_ci_linear,
+            "ci_gpem_quadratic": total_global_metrics_ci_quadratic,
+            "ci_baseline": total_global_metrics_ci_baseline,
+            "akf_static": total_global_metrics_akf_static,
+            "akf_gpem_linear": total_global_metrics_akf_linear,
+            "akf_gpem_quadratic": total_global_metrics_akf_quadratic,
+            "akf_baseline": total_global_metrics_akf_baseline,
+            "pf_static": total_global_metrics_pf_static,
+            "pf_gpem_linear": total_global_metrics_pf_linear,
+            "pf_gpem_quadratic": total_global_metrics_pf_quadratic,
+            "pf_baseline": total_global_metrics_pf_baseline,
         }
         out["triple_global_amota_frames_count"] = {
             "static": triple_global_amota_frames_count_static,
             "gpem_linear": triple_global_amota_frames_count_linear,
             "gpem_quadratic": triple_global_amota_frames_count_quadratic,
+            "baseline": triple_global_amota_frames_count_baseline,
+            "ci_static": triple_global_amota_frames_count_ci_static,
+            "ci_gpem_linear": triple_global_amota_frames_count_ci_linear,
+            "ci_gpem_quadratic": triple_global_amota_frames_count_ci_quadratic,
+            "ci_baseline": triple_global_amota_frames_count_ci_baseline,
+            "akf_static": triple_global_amota_frames_count_akf_static,
+            "akf_gpem_linear": triple_global_amota_frames_count_akf_linear,
+            "akf_gpem_quadratic": triple_global_amota_frames_count_akf_quadratic,
+            "akf_baseline": triple_global_amota_frames_count_akf_baseline,
+            "pf_static": triple_global_amota_frames_count_pf_static,
+            "pf_gpem_linear": triple_global_amota_frames_count_pf_linear,
+            "pf_gpem_quadratic": triple_global_amota_frames_count_pf_quadratic,
+            "pf_baseline": triple_global_amota_frames_count_pf_baseline,
         }
         out["triple_global_amotp_frames_count"] = {
             "static": triple_global_amotp_frames_count_static,
             "gpem_linear": triple_global_amotp_frames_count_linear,
             "gpem_quadratic": triple_global_amotp_frames_count_quadratic,
+            "baseline": triple_global_amotp_frames_count_baseline,
+            "ci_static": triple_global_amotp_frames_count_ci_static,
+            "ci_gpem_linear": triple_global_amotp_frames_count_ci_linear,
+            "ci_gpem_quadratic": triple_global_amotp_frames_count_ci_quadratic,
+            "ci_baseline": triple_global_amotp_frames_count_ci_baseline,
+            "akf_static": triple_global_amotp_frames_count_akf_static,
+            "akf_gpem_linear": triple_global_amotp_frames_count_akf_linear,
+            "akf_gpem_quadratic": triple_global_amotp_frames_count_akf_quadratic,
+            "akf_baseline": triple_global_amotp_frames_count_akf_baseline,
+            "pf_static": triple_global_amotp_frames_count_pf_static,
+            "pf_gpem_linear": triple_global_amotp_frames_count_pf_linear,
+            "pf_gpem_quadratic": triple_global_amotp_frames_count_pf_quadratic,
+            "pf_baseline": triple_global_amotp_frames_count_pf_baseline,
+        }
+        out["triple_global_hota"] = {
+            "baseline": hota_acc_baseline.compute(),
+            "static": hota_acc_static.compute(),
+            "gpem_linear": hota_acc_linear.compute(),
+            "gpem_quadratic": hota_acc_quadratic.compute(),
+            "ci_baseline": hota_acc_ci_baseline.compute(),
+            "ci_static": hota_acc_ci_static.compute(),
+            "ci_gpem_linear": hota_acc_ci_linear.compute(),
+            "ci_gpem_quadratic": hota_acc_ci_quadratic.compute(),
+            "akf_baseline": hota_acc_akf_baseline.compute(),
+            "akf_static": hota_acc_akf_static.compute(),
+            "akf_gpem_linear": hota_acc_akf_linear.compute(),
+            "akf_gpem_quadratic": hota_acc_akf_quadratic.compute(),
+            "pf_baseline": hota_acc_pf_baseline.compute(),
+            "pf_static": hota_acc_pf_static.compute(),
+            "pf_gpem_linear": hota_acc_pf_linear.compute(),
+            "pf_gpem_quadratic": hota_acc_pf_quadratic.compute(),
         }
     return out
 

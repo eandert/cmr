@@ -1,84 +1,144 @@
 import numpy as np
+import math
 
-def calculate_amota(detected_objects, ground_truth_objects, iou_threshold=0.5):
+
+def _match_detections_to_gt(detected_objects, ground_truth_objects, iou_threshold=0.1,
+                            bbox_tolerance=0.5):
     """
-    Calculate the Average Multi-Object Tracking Accuracy (AMOTA).
-    
-    Parameters:
-    detected_objects (list): List of detected objects.
-    ground_truth_objects (list): List of ground truth objects.
-    iou_threshold (float): Intersection over Union (IoU) threshold to consider a match.
-    
+    Match detected objects to ground truth using greedy IoU matching.
+
+    Bounding boxes are expanded by bbox_tolerance (as a fraction of each dimension)
+    before computing IoU, to accommodate localization error proportionally to vehicle size.
+    E.g., bbox_tolerance=0.5 adds 50% to width and height on each side.
+
     Returns:
-    float: The AMOTA score.
+        matches: list of (det_idx, gt_idx) pairs
+        unmatched_dets: list of det indices (false positives)
+        unmatched_gts: list of gt indices (false negatives)
     """
-    total_matches = 0
+    matched_gt = set()
+    matches = []
+    unmatched_dets = []
+
+    for d_idx, det in enumerate(detected_objects):
+        best_iou = -1.0
+        best_gt_idx = -1
+        det_bbox = _expand_bbox(det.detected_bbox, det, bbox_tolerance)
+        for g_idx, gt in enumerate(ground_truth_objects):
+            if g_idx in matched_gt:
+                continue
+            gt_bbox = _expand_bbox(gt.bbox, gt, bbox_tolerance)
+            _iou_value = iou(gt_bbox, det_bbox)
+            if _iou_value > iou_threshold and _iou_value > best_iou:
+                best_iou = _iou_value
+                best_gt_idx = g_idx
+        if best_gt_idx >= 0:
+            matches.append((d_idx, best_gt_idx))
+            matched_gt.add(best_gt_idx)
+        else:
+            unmatched_dets.append(d_idx)
+
+    unmatched_gts = [i for i in range(len(ground_truth_objects)) if i not in matched_gt]
+    return matches, unmatched_dets, unmatched_gts
+
+
+def _expand_bbox(bbox, obj, tolerance):
+    """
+    Expand a bounding box by a percentage tolerance.
+    Uses the object's centroid, width/length, and angle to rebuild an expanded box.
+    Falls back to the original bbox if attributes are missing.
+    """
+    if bbox is None or tolerance <= 0:
+        return bbox
+    try:
+        cx, cy = obj.centroid[0], obj.centroid[1]
+        # Try width/length (GT objects) or width/length from detected objects
+        w = getattr(obj, 'width', None)
+        l = getattr(obj, 'length', None)
+        if w is None or l is None:
+            # Try dimensions tuple (some GT objects)
+            dims = getattr(obj, 'dimensions', None)
+            if dims is not None:
+                w, l = dims[0], dims[1]
+        if w is None or l is None:
+            return bbox
+        angle = getattr(obj, 'angle', 0.0) or 0.0
+        hw = (w * (1.0 + tolerance)) / 2.0
+        hl = (l * (1.0 + tolerance)) / 2.0
+        cos_a = math.cos(angle)
+        sin_a = math.sin(angle)
+        corners = [(-hw, -hl), (hw, -hl), (hw, hl), (-hw, hl)]
+        return [(cx + cos_a * x - sin_a * y, cy + sin_a * x + cos_a * y) for x, y in corners]
+    except (AttributeError, TypeError):
+        return bbox
+
+
+def calculate_amota(detected_objects, ground_truth_objects, iou_threshold=0.1,
+                    bbox_tolerance=0.5):
+    """
+    Calculate per-frame MOTA (Multi-Object Tracking Accuracy).
+
+    MOTA = 1 - (FP + FN) / max(1, GT_total)
+
+    Uses IoU matching with bounding box tolerance expansion so the matching
+    threshold naturally scales with vehicle size.
+
+    Returns:
+        float: MOTA score (can be negative if FP+FN > GT). None if no GT.
+    """
     total_ground_truth = len(ground_truth_objects)
-    total_detected = len(detected_objects)
-    
+
     if total_ground_truth == 0:
-        return 0.0
+        return None
 
-    # Create a list to keep track of matched ground truth objects
-    matched_gt = [False] * total_ground_truth
+    matches, unmatched_dets, unmatched_gts = _match_detections_to_gt(
+        detected_objects, ground_truth_objects, iou_threshold,
+        bbox_tolerance=bbox_tolerance)
 
-    # Example: Count matches based on some criteria (e.g., IoU threshold)
-    for det in detected_objects:
-        for i, gt in enumerate(ground_truth_objects):
-            _iou_value = iou(gt.bbox, det.detected_bbox)
-            if not matched_gt[i] and _iou_value > iou_threshold:
-                total_matches += 1
-                matched_gt[i] = True
-                break
+    tp = len(matches)
+    fp = len(unmatched_dets)
+    fn = len(unmatched_gts)
 
-    # Calculate precision and recall
-    precision = total_matches / total_detected if total_detected > 0 else 0
-    recall = total_matches / total_ground_truth
+    # MOTA formula: 1 - (FP + FN + IDSW) / GT
+    # Not clamped — negative values indicate more errors than GT objects
+    mota = 1.0 - (fp + fn) / max(1, total_ground_truth)
 
-    # Calculate AMOTA score
-    amota = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
-    
-    return amota
+    return mota
 
 
-def calculate_amotp(detected_objects, ground_truth_objects, iou_threshold=0.5):
+def calculate_amotp(detected_objects, ground_truth_objects, iou_threshold=0.1,
+                    bbox_tolerance=0.5):
     """
-    Calculate the Average Multi-Object Tracking Precision (AMOTP).
-    
-    AMOTP measures precision - how many detected objects are correct matches.
-    Unlike AMOTA which measures recall (how many true objects are detected),
-    AMOTP focuses on the quality of detections.
-    
-    Parameters:
-    detected_objects (list): List of detected objects.
-    ground_truth_objects (list): List of ground truth objects.
-    iou_threshold (float): Intersection over Union (IoU) threshold to consider a match.
-    
+    Calculate per-frame MOTP (Multi-Object Tracking Precision).
+
+    MOTP = average Euclidean center distance of matched (TP) pairs.
+    Lower is better. Returns 0.0 if no matches.
+
+    This measures localization quality — how close matched detections are
+    to their ground truth. GPEM should directly improve this metric.
+
     Returns:
-    float: The AMOTP score (0.0 to 1.0), where 1.0 is perfect precision.
+        float: Average center distance of matched pairs (meters). 0.0 if no matches.
     """
-    total_matches = 0
-    total_detected = len(detected_objects)
-    
-    if total_detected == 0:
+    if len(detected_objects) == 0 or len(ground_truth_objects) == 0:
         return 0.0
 
-    # Create a list to keep track of matched ground truth objects
-    matched_gt = [False] * len(ground_truth_objects)
+    matches, _, _ = _match_detections_to_gt(
+        detected_objects, ground_truth_objects, iou_threshold,
+        bbox_tolerance=bbox_tolerance)
 
-    # Count matches based on IoU threshold
-    for det in detected_objects:
-        for i, gt in enumerate(ground_truth_objects):
-            _iou_value = iou(gt.bbox, det.detected_bbox)
-            if not matched_gt[i] and _iou_value > iou_threshold:
-                total_matches += 1
-                matched_gt[i] = True
-                break
+    if len(matches) == 0:
+        return 0.0
 
-    # AMOTP is simply the precision: correct detections / total detections
-    amotp = total_matches / total_detected
-    
-    return amotp
+    total_distance = 0.0
+    for d_idx, g_idx in matches:
+        det = detected_objects[d_idx]
+        gt = ground_truth_objects[g_idx]
+        dx = det.centroid[0] - gt.centroid[0]
+        dy = det.centroid[1] - gt.centroid[1]
+        total_distance += math.sqrt(dx * dx + dy * dy)
+
+    return total_distance / len(matches)
 
 
 def polygon_area_signed(vertices):
