@@ -247,7 +247,7 @@ class ResizableKalman(FilterBase):
                                 [0., 1., 0., 0., 0.],
                                 [0., 0., 0., 1., 0.]], dtype='float')
         else:
-            # TODO: implement radar type
+            # Radar observation model (not currently used)
             return np.array([[0, 0., 0., 0.],
                             [0., 0, 0., 0.]], dtype='float')
 
@@ -263,10 +263,10 @@ class ResizableKalman(FilterBase):
             precision_sum += P_inv
             weighted_pos += P_inv @ meas[:2]
 
-        temporary_c = np.linalg.inv(precision_sum)
-        temporary_mu = temporary_c @ weighted_pos
+        fused_cov = np.linalg.inv(precision_sum)
+        fused_pos = fused_cov @ weighted_pos
 
-        return temporary_mu, temporary_c
+        return fused_pos, fused_cov
 
 
     def fusion(self, measurement_list, time, monitor, participant_trust_scores: Dict[int, float] = None):
@@ -328,13 +328,8 @@ class ResizableKalman(FilterBase):
             self.dy = 0.0
             self.idx += 1
         else:
-            # try:
-            # We have valid data
-            # Transition matrix
-            elapsed = time - self.last_update  # FIXED: new_time - old_time = positive
+            elapsed = time - self.last_update
             if elapsed <= 0.0:
-                # print( "Error time elapsed is incorrect! " + str(elapsed) )
-                # Set to arbitrary time
                 elapsed = 0.1
 
             if self.fusion_mode == 0:
@@ -541,7 +536,6 @@ class ResizableKalman(FilterBase):
                     Z_t = (mu).transpose()
                     Z_t = Z_t.reshape(Z_t.shape[0], -1)
                     y_t_temp = Z_t - self.h_t(h_t_type).dot(self.X_hat_t)
-                    # print(y_t_temp)
                     location_error = math.hypot(y_t_temp[0], y_t_temp[1])
                     expected_a, expected_b, expected_angle = utils.ellipsify(
                         cov, 1.0)
@@ -565,19 +559,10 @@ class ResizableKalman(FilterBase):
 
                     self.error_tracker_temp.append(
                         [id, location_error_std, length])
-                    # print(" error: ", id, location_error, expected_location_error, location_error_std)
 
-                # TruPercept
                 trupercept_list = []
-                # print(self.localTrackersIDList, self.localTrackersMeasurementList, self.localTrackersExtraList)
                 for id_test, mu_test, confidence_test in zip(self.localTrackersIDList, self.localTrackersMeasurementList, self.localTrackersExtraList):
-                    # print(self.localTrackersIDList, self.localTrackersMeasurementList, self.localTrackersExtraList)
-                    # trupercept_sub_list = []
-                    # for id, mu, confidence in zip(self.localTrackersIDList, self.localTrackersMeasurementList, self.localTrackersExtraList):
-                    #     if id_test != id:
-                    # iou = 1 - shared_math.computeDistanceBBox([mu_test[0], mu_test[1], self.min_size, self.min_size, 0], [mu[0], mu[1], self.min_size, self.min_size, 0])
                     trupercept_list.append([id_test, confidence_test[0]])
-                    # trupercept_list.append(trupercept_sub_list)
                 self.trupercept_list = trupercept_list
 
             self.last_update = time
@@ -623,8 +608,6 @@ class ResizableKalman(FilterBase):
                     self.length = self.length + length_gain * (l_meas - self.length)
                     self.length_variance = (1 - length_gain) * self.length_variance
 
-            # except Exception as e:
-            #     print ( " Exception: " + str(e) )
 
     def getKalmanPred(self, time):
         # Use the current Kalman state to predict the position at the given time

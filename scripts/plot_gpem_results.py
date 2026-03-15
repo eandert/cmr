@@ -317,6 +317,14 @@ def plot_gpem_results_simple(results_dir):
             "PF":     "PF + GPEM Linear",
         },
     }
+    # Map filter name to its baseline label for improvement calculation
+    filter_baseline_labels = {
+        "Kalman": "Baseline",
+        "CI":     "CI + Baseline",
+        "AKF":    "AKF + Baseline",
+        "PF":     "PF + Baseline",
+    }
+
     for cov_label, filter_map in combined_variants.items():
         for metric_key, ylabel, higher_is_better in all_metrics:
             available = [(f, lbl) for f, lbl in filter_map.items()
@@ -324,27 +332,66 @@ def plot_gpem_results_simple(results_dir):
             if len(available) < 2:
                 continue
 
-            fig_c, ax_c = plt.subplots(1, 1, figsize=(10, 5))
+            fig_c, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(14, 5))
             fig_c.suptitle(f'{ylabel} Across Filters ({cov_label.replace("_", " ").title()})',
                            fontsize=14, fontweight='bold')
 
+            # Left: absolute values
             for filter_name, lbl in available:
                 data = model_data[lbl]
                 means = data[f"{metric_key}_means"]
                 stds = data[f"{metric_key}_stds"]
                 color = filter_color_map[filter_name]
                 marker = filter_marker_map[filter_name]
-                ax_c.plot(data["rates"], means, marker=marker, linestyle='-', label=filter_name,
-                          linewidth=2.5, markersize=8, color=color)
-                ax_c.fill_between(data["rates"], means - stds, means + stds, alpha=0.15, color=color)
+                ax_left.plot(data["rates"], means, marker=marker, linestyle='-', label=filter_name,
+                             linewidth=2.5, markersize=8, color=color)
+                ax_left.fill_between(data["rates"], means - stds, means + stds, alpha=0.15, color=color)
 
-            ax_c.set_xlabel('AV Injection Rate (%)', fontweight='bold', fontsize=11)
-            ax_c.set_ylabel(ylabel, fontweight='bold', fontsize=11)
-            ax_c.legend(fontsize=10, loc='best')
-            ax_c.grid(True, alpha=0.3)
-            ax_c.set_xlim(0, 105)
+            ax_left.set_xlabel('AV Injection Rate (%)', fontweight='bold', fontsize=11)
+            ax_left.set_ylabel(ylabel, fontweight='bold', fontsize=11)
+            ax_left.set_title(f'{ylabel} Comparison', fontweight='bold', fontsize=12)
+            ax_left.legend(fontsize=10, loc='best')
+            ax_left.grid(True, alpha=0.3)
+            ax_left.set_xlim(0, 105)
             if metric_key in ("hota", "deta", "assa"):
-                ax_c.set_ylim(0, 1.05)
+                ax_left.set_ylim(0, 1.05)
+
+            # Right: improvement vs each filter's own baseline
+            for filter_name, lbl in available:
+                bl_lbl = filter_baseline_labels.get(filter_name)
+                if not bl_lbl or bl_lbl not in model_data or len(model_data[bl_lbl]["rates"]) == 0:
+                    continue
+                data = model_data[lbl]
+                means = data[f"{metric_key}_means"]
+                stds = data[f"{metric_key}_stds"]
+                ref_means = model_data[bl_lbl][f"{metric_key}_means"]
+                ref_stds = model_data[bl_lbl][f"{metric_key}_stds"]
+                if len(means) != len(ref_means) or len(means) == 0:
+                    continue
+                if higher_is_better:
+                    imp = (means - ref_means) / np.maximum(np.abs(ref_means), 1e-9) * 100
+                else:
+                    imp = (ref_means - means) / np.maximum(np.abs(ref_means), 1e-9) * 100
+                imp_stds = np.sqrt(
+                    (stds / np.maximum(np.abs(ref_means), 1e-9))**2 +
+                    (means * ref_stds / np.maximum(ref_means**2, 1e-9))**2
+                ) * 100
+                color = filter_color_map[filter_name]
+                marker = filter_marker_map[filter_name]
+                ax_right.plot(data["rates"], imp, marker=marker, linestyle='-', label=filter_name,
+                              linewidth=2.5, markersize=8, color=color)
+                ax_right.fill_between(data["rates"], imp - imp_stds, imp + imp_stds,
+                                      alpha=0.15, color=color)
+
+            ax_right.axhline(y=0, color='black', linestyle='--', linewidth=1, alpha=0.5)
+            ax_right.set_xlabel('AV Injection Rate (%)', fontweight='bold', fontsize=11)
+            ax_right.set_ylabel('Improvement (%)', fontweight='bold', fontsize=11)
+            imp_note = "(positive = better)" if higher_is_better else "(positive = closer to GT)"
+            ax_right.set_title(f'{ylabel} Improvement vs Baseline {imp_note}',
+                               fontweight='bold', fontsize=12)
+            ax_right.legend(fontsize=10, loc='best')
+            ax_right.grid(True, alpha=0.3)
+            ax_right.set_xlim(0, 105)
 
             plt.tight_layout()
             fname_c = f"gpem_combined_{cov_label}_{metric_key}_plot.png"

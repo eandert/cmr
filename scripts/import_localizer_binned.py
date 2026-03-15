@@ -11,7 +11,7 @@ Usage:
 
 Example:
     python import_localizer_binned.py \
-        /home/rave/test/localization_project/evaluation_results/hd_map_kiss_cross_seq/hd_map_kiss_binned_errors.csv \
+        path/to/hd_map_kiss_binned_errors.csv \
         kiss_icp
 """
 

@@ -276,27 +276,62 @@ def plot_distribution_sweep_results(results_dir):
             if len(available) < 2:
                 continue
 
-            fig, ax = plt.subplots(1, 1, figsize=(10, 5))
+            fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(14, 5))
             fig.suptitle(f'{ylabel} Across Filters ({cov_label.replace("_", " ").title()})',
                          fontsize=14, fontweight='bold')
 
+            # Left: absolute values
             for filter_name, vk in available:
                 means = variant_data[vk][metric_key]["means"]
                 stds = variant_data[vk][metric_key]["stds"]
                 color = FILTER_COLORS[filter_name]
                 marker = FILTER_MARKERS[filter_name]
-                ax.plot(x, means, marker=marker, linestyle='-', label=filter_name,
-                        linewidth=2.5, markersize=8, color=color)
-                ax.fill_between(x, means - stds, means + stds, alpha=0.15, color=color)
+                ax_left.plot(x, means, marker=marker, linestyle='-', label=filter_name,
+                             linewidth=2.5, markersize=8, color=color)
+                ax_left.fill_between(x, means - stds, means + stds, alpha=0.15, color=color)
 
-            ax.set_xticks(x)
-            ax.set_xticklabels(tick_labels, fontsize=7, rotation=15, ha="right")
-            ax.set_ylabel(ylabel, fontweight='bold', fontsize=11)
-            ax.set_xlabel('Detector / Localizer Distribution', fontweight='bold', fontsize=11)
-            ax.legend(fontsize=10, loc='best')
-            ax.grid(True, alpha=0.3)
+            ax_left.set_xticks(x)
+            ax_left.set_xticklabels(tick_labels, fontsize=7, rotation=15, ha="right")
+            ax_left.set_ylabel(ylabel, fontweight='bold', fontsize=11)
+            ax_left.set_xlabel('Detector / Localizer Distribution', fontweight='bold', fontsize=11)
+            ax_left.set_title(f'{ylabel} Comparison', fontweight='bold', fontsize=12)
+            ax_left.legend(fontsize=10, loc='best')
+            ax_left.grid(True, alpha=0.3)
             if metric_key in ("hota", "deta", "assa"):
-                ax.set_ylim(0, 1.05)
+                ax_left.set_ylim(0, 1.05)
+
+            # Right: improvement vs each filter's own baseline
+            for filter_name, vk in available:
+                bl_key = FILTER_BASELINES[filter_name]
+                if bl_key not in variant_data:
+                    continue
+                means = variant_data[vk][metric_key]["means"]
+                stds = variant_data[vk][metric_key]["stds"]
+                ref_means = variant_data[bl_key][metric_key]["means"]
+                ref_stds = variant_data[bl_key][metric_key]["stds"]
+                if higher_is_better:
+                    imp = (means - ref_means) / np.maximum(np.abs(ref_means), 1e-9) * 100
+                else:
+                    imp = (ref_means - means) / np.maximum(np.abs(ref_means), 1e-9) * 100
+                imp_stds = np.sqrt(
+                    (stds / np.maximum(np.abs(ref_means), 1e-9))**2 +
+                    (means * ref_stds / np.maximum(ref_means**2, 1e-9))**2
+                ) * 100
+                color = FILTER_COLORS[filter_name]
+                marker = FILTER_MARKERS[filter_name]
+                ax_right.plot(x, imp, marker=marker, linestyle='-', label=filter_name,
+                              linewidth=2.5, markersize=8, color=color)
+                ax_right.fill_between(x, imp - imp_stds, imp + imp_stds, alpha=0.15, color=color)
+
+            ax_right.axhline(y=0, color='black', linestyle='--', linewidth=1, alpha=0.5)
+            ax_right.set_xticks(x)
+            ax_right.set_xticklabels(tick_labels, fontsize=7, rotation=15, ha="right")
+            ax_right.set_ylabel('Improvement (%)', fontweight='bold', fontsize=11)
+            imp_note = "(positive = better)" if higher_is_better else "(positive = closer to GT)"
+            ax_right.set_title(f'{ylabel} Improvement vs Baseline {imp_note}',
+                               fontweight='bold', fontsize=12)
+            ax_right.legend(fontsize=10, loc='best')
+            ax_right.grid(True, alpha=0.3)
 
             plt.tight_layout()
             fname = f"gpem_dist_combined_{cov_label}_{metric_key}_plot.png"
