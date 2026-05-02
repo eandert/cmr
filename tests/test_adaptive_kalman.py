@@ -64,7 +64,8 @@ class TestAdaptiveKalmanInit(unittest.TestCase):
 
     def test_initial_sigma_a(self):
         akf = AdaptiveKalman(0.0, 0.0, 0.0, fusion_mode=0)
-        self.assertEqual(akf.sigma_a, 2.0)  # Same default as parent
+        from filters.filter_config import SIGMA_A
+        self.assertEqual(akf.sigma_a, SIGMA_A["akf"])  # Reads from centralized config
 
 
 class TestAdaptiveKalmanFusion(unittest.TestCase):

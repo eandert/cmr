@@ -1,0 +1,13 @@
+{
+  "config_name": "baseline",
+  "num_runs": 3,
+  "avg_global_amota_mean": 0.48704019287473294,
+  "avg_global_amota_std": 0.09574973390281805,
+  "avg_cis_amota_mean": 0.9898377862211506,
+  "avg_cis_amota_std": 0.0016233186090629553,
+  "avg_cav_amota_mean": 0.9970831897843543,
+  "avg_cav_amota_std": 0.005052063489534248,
+  "avg_perception_anomalies_mean": 0.3333333333333333,
+  "avg_perception_anomalies_std": 0.5773502691896257,
+  "total_anomaly_detections": 1
+}

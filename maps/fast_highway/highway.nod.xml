@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nodes>
+    <!-- 1400m highway with two gentle curves and on/off ramp -->
+    <node id="W" x="-200" y="0"/>
+    <node id="A" x="100" y="0"/>
+    <node id="B" x="350" y="40"/>
+    <node id="C" x="600" y="40"/>
+    <!-- Ramp junction between curves -->
+    <node id="R" x="725" y="15" type="priority"/>
+    <!-- Ramp endpoint (surface street) -->
+    <node id="RS" x="725" y="-200"/>
+    <node id="D" x="850" y="-10"/>
+    <node id="E" x="1000" y="-10"/>
+    <node id="F" x="1200" y="0"/>
+</nodes>

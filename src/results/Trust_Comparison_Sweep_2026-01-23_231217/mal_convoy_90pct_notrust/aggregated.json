@@ -1,0 +1,13 @@
+{
+  "config_name": "mal_convoy_90pct_notrust",
+  "num_runs": 10,
+  "avg_global_amota_mean": 0.46513383623044663,
+  "avg_global_amota_std": 0.03660578647410342,
+  "avg_cis_amota_mean": 0.9906257386928513,
+  "avg_cis_amota_std": 0.0007438685670389495,
+  "avg_cav_amota_mean": 0.993992853571953,
+  "avg_cav_amota_std": 0.0007047742718214317,
+  "avg_perception_anomalies_mean": 4.2,
+  "avg_perception_anomalies_std": 3.675746333890726,
+  "total_anomaly_detections": 42
+}

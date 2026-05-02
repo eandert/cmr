@@ -1,0 +1,580 @@
+{
+  "name": "Trust_Comparison_Sweep",
+  "description": "Compare trust scoring ON vs OFF for each error type",
+  "runs_per_config": 10,
+  "warmup_steps": 2000,
+  "record_steps": 5000,
+  "max_steps": null,
+  "error_injection_start": 2000,
+  "error_injection_end": null,
+  "baseline": {
+    "name": "baseline_trust",
+    "description": "Baseline no errors [trust=ON]"
+  },
+  "variants": [
+    {
+      "name": "baseline_notrust",
+      "description": "Baseline no errors [trust=OFF]"
+    },
+    {
+      "name": "extrinsics_1deg_trust",
+      "description": "Extrinsics 1\u00b0 (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "extrinsics_1deg_notrust",
+      "description": "Extrinsics 1\u00b0 (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "extrinsics_2deg_trust",
+      "description": "Extrinsics 2\u00b0 (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "extrinsics_2deg_notrust",
+      "description": "Extrinsics 2\u00b0 (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "extrinsics_3deg_trust",
+      "description": "Extrinsics 3\u00b0 (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "extrinsics_3deg_notrust",
+      "description": "Extrinsics 3\u00b0 (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "extrinsics_4deg_trust",
+      "description": "Extrinsics 4\u00b0 (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "extrinsics_4deg_notrust",
+      "description": "Extrinsics 4\u00b0 (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "extrinsics_5deg_trust",
+      "description": "Extrinsics 5\u00b0 (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "extrinsics_5deg_notrust",
+      "description": "Extrinsics 5\u00b0 (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "extrinsics_6deg_trust",
+      "description": "Extrinsics 6\u00b0 (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "extrinsics_6deg_notrust",
+      "description": "Extrinsics 6\u00b0 (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "extrinsics_7deg_trust",
+      "description": "Extrinsics 7\u00b0 (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "extrinsics_7deg_notrust",
+      "description": "Extrinsics 7\u00b0 (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "extrinsics_8deg_trust",
+      "description": "Extrinsics 8\u00b0 (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "extrinsics_8deg_notrust",
+      "description": "Extrinsics 8\u00b0 (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "extrinsics_9deg_trust",
+      "description": "Extrinsics 9\u00b0 (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "extrinsics_9deg_notrust",
+      "description": "Extrinsics 9\u00b0 (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "extrinsics_10deg_trust",
+      "description": "Extrinsics 10\u00b0 (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "extrinsics_10deg_notrust",
+      "description": "Extrinsics 10\u00b0 (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "localization_10pct_trust",
+      "description": "Localization 10% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "localization_10pct_notrust",
+      "description": "Localization 10% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "localization_20pct_trust",
+      "description": "Localization 20% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "localization_20pct_notrust",
+      "description": "Localization 20% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "localization_30pct_trust",
+      "description": "Localization 30% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "localization_30pct_notrust",
+      "description": "Localization 30% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "localization_40pct_trust",
+      "description": "Localization 40% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "localization_40pct_notrust",
+      "description": "Localization 40% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "localization_50pct_trust",
+      "description": "Localization 50% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "localization_50pct_notrust",
+      "description": "Localization 50% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "localization_60pct_trust",
+      "description": "Localization 60% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "localization_60pct_notrust",
+      "description": "Localization 60% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "localization_70pct_trust",
+      "description": "Localization 70% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "localization_70pct_notrust",
+      "description": "Localization 70% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "localization_80pct_trust",
+      "description": "Localization 80% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "localization_80pct_notrust",
+      "description": "Localization 80% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "localization_90pct_trust",
+      "description": "Localization 90% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "localization_90pct_notrust",
+      "description": "Localization 90% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "localization_100pct_trust",
+      "description": "Localization 100% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "localization_100pct_notrust",
+      "description": "Localization 100% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_remove_10pct_trust",
+      "description": "Mal. removal 10% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_remove_10pct_notrust",
+      "description": "Mal. removal 10% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_remove_20pct_trust",
+      "description": "Mal. removal 20% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_remove_20pct_notrust",
+      "description": "Mal. removal 20% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_remove_30pct_trust",
+      "description": "Mal. removal 30% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_remove_30pct_notrust",
+      "description": "Mal. removal 30% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_remove_40pct_trust",
+      "description": "Mal. removal 40% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_remove_40pct_notrust",
+      "description": "Mal. removal 40% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_remove_50pct_trust",
+      "description": "Mal. removal 50% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_remove_50pct_notrust",
+      "description": "Mal. removal 50% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_remove_60pct_trust",
+      "description": "Mal. removal 60% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_remove_60pct_notrust",
+      "description": "Mal. removal 60% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_remove_70pct_trust",
+      "description": "Mal. removal 70% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_remove_70pct_notrust",
+      "description": "Mal. removal 70% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_remove_80pct_trust",
+      "description": "Mal. removal 80% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_remove_80pct_notrust",
+      "description": "Mal. removal 80% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_remove_90pct_trust",
+      "description": "Mal. removal 90% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_remove_90pct_notrust",
+      "description": "Mal. removal 90% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_remove_100pct_trust",
+      "description": "Mal. removal 100% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_remove_100pct_notrust",
+      "description": "Mal. removal 100% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_add_10pct_trust",
+      "description": "Mal. addition 10% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_add_10pct_notrust",
+      "description": "Mal. addition 10% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_add_20pct_trust",
+      "description": "Mal. addition 20% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_add_20pct_notrust",
+      "description": "Mal. addition 20% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_add_30pct_trust",
+      "description": "Mal. addition 30% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_add_30pct_notrust",
+      "description": "Mal. addition 30% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_add_40pct_trust",
+      "description": "Mal. addition 40% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_add_40pct_notrust",
+      "description": "Mal. addition 40% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_add_50pct_trust",
+      "description": "Mal. addition 50% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_add_50pct_notrust",
+      "description": "Mal. addition 50% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_add_60pct_trust",
+      "description": "Mal. addition 60% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_add_60pct_notrust",
+      "description": "Mal. addition 60% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_add_70pct_trust",
+      "description": "Mal. addition 70% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_add_70pct_notrust",
+      "description": "Mal. addition 70% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_add_80pct_trust",
+      "description": "Mal. addition 80% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_add_80pct_notrust",
+      "description": "Mal. addition 80% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_add_90pct_trust",
+      "description": "Mal. addition 90% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_add_90pct_notrust",
+      "description": "Mal. addition 90% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_add_100pct_trust",
+      "description": "Mal. addition 100% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_add_100pct_notrust",
+      "description": "Mal. addition 100% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_convoy_10pct_trust",
+      "description": "Mal. convoy 10% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_convoy_10pct_notrust",
+      "description": "Mal. convoy 10% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_convoy_20pct_trust",
+      "description": "Mal. convoy 20% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_convoy_20pct_notrust",
+      "description": "Mal. convoy 20% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_convoy_30pct_trust",
+      "description": "Mal. convoy 30% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_convoy_30pct_notrust",
+      "description": "Mal. convoy 30% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_convoy_40pct_trust",
+      "description": "Mal. convoy 40% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_convoy_40pct_notrust",
+      "description": "Mal. convoy 40% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_convoy_50pct_trust",
+      "description": "Mal. convoy 50% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_convoy_50pct_notrust",
+      "description": "Mal. convoy 50% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_convoy_60pct_trust",
+      "description": "Mal. convoy 60% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_convoy_60pct_notrust",
+      "description": "Mal. convoy 60% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_convoy_70pct_trust",
+      "description": "Mal. convoy 70% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_convoy_70pct_notrust",
+      "description": "Mal. convoy 70% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_convoy_80pct_trust",
+      "description": "Mal. convoy 80% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_convoy_80pct_notrust",
+      "description": "Mal. convoy 80% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_convoy_90pct_trust",
+      "description": "Mal. convoy 90% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_convoy_90pct_notrust",
+      "description": "Mal. convoy 90% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "mal_convoy_100pct_trust",
+      "description": "Mal. convoy 100% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "mal_convoy_100pct_notrust",
+      "description": "Mal. convoy 100% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "high_miss_10pct_trust",
+      "description": "High miss rate +10% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "high_miss_10pct_notrust",
+      "description": "High miss rate +10% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "high_miss_20pct_trust",
+      "description": "High miss rate +20% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "high_miss_20pct_notrust",
+      "description": "High miss rate +20% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "high_miss_30pct_trust",
+      "description": "High miss rate +30% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "high_miss_30pct_notrust",
+      "description": "High miss rate +30% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "high_miss_40pct_trust",
+      "description": "High miss rate +40% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "high_miss_40pct_notrust",
+      "description": "High miss rate +40% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "high_miss_50pct_trust",
+      "description": "High miss rate +50% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "high_miss_50pct_notrust",
+      "description": "High miss rate +50% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "high_miss_60pct_trust",
+      "description": "High miss rate +60% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "high_miss_60pct_notrust",
+      "description": "High miss rate +60% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "high_miss_70pct_trust",
+      "description": "High miss rate +70% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "high_miss_70pct_notrust",
+      "description": "High miss rate +70% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "high_miss_80pct_trust",
+      "description": "High miss rate +80% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "high_miss_80pct_notrust",
+      "description": "High miss rate +80% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "high_miss_90pct_trust",
+      "description": "High miss rate +90% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "high_miss_90pct_notrust",
+      "description": "High miss rate +90% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "high_miss_100pct_trust",
+      "description": "High miss rate +100% (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "high_miss_100pct_notrust",
+      "description": "High miss rate +100% (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "lag_1steps_trust",
+      "description": "Detection lag 1 steps (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "lag_1steps_notrust",
+      "description": "Detection lag 1 steps (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "lag_2steps_trust",
+      "description": "Detection lag 2 steps (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "lag_2steps_notrust",
+      "description": "Detection lag 2 steps (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "lag_3steps_trust",
+      "description": "Detection lag 3 steps (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "lag_3steps_notrust",
+      "description": "Detection lag 3 steps (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "lag_4steps_trust",
+      "description": "Detection lag 4 steps (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "lag_4steps_notrust",
+      "description": "Detection lag 4 steps (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "lag_5steps_trust",
+      "description": "Detection lag 5 steps (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "lag_5steps_notrust",
+      "description": "Detection lag 5 steps (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "lag_6steps_trust",
+      "description": "Detection lag 6 steps (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "lag_6steps_notrust",
+      "description": "Detection lag 6 steps (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "lag_7steps_trust",
+      "description": "Detection lag 7 steps (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "lag_7steps_notrust",
+      "description": "Detection lag 7 steps (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "lag_8steps_trust",
+      "description": "Detection lag 8 steps (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "lag_8steps_notrust",
+      "description": "Detection lag 8 steps (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "lag_9steps_trust",
+      "description": "Detection lag 9 steps (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "lag_9steps_notrust",
+      "description": "Detection lag 9 steps (10% CAVs) [trust=OFF]"
+    },
+    {
+      "name": "lag_10steps_trust",
+      "description": "Detection lag 10 steps (10% CAVs) [trust=ON]"
+    },
+    {
+      "name": "lag_10steps_notrust",
+      "description": "Detection lag 10 steps (10% CAVs) [trust=OFF]"
+    }
+  ]
+}

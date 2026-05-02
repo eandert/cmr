@@ -1,0 +1,13 @@
+{
+  "config_name": "mal_add_80pct",
+  "num_runs": 10,
+  "avg_global_amota_mean": 0.4895097848445792,
+  "avg_global_amota_std": 0.0548574912812738,
+  "avg_cis_amota_mean": 0.9901365185634782,
+  "avg_cis_amota_std": 0.0011838054870543242,
+  "avg_cav_amota_mean": 0.9918178183281156,
+  "avg_cav_amota_std": 0.002400550996956993,
+  "avg_perception_anomalies_mean": 0,
+  "avg_perception_anomalies_std": 0.0,
+  "total_anomaly_detections": 0
+}

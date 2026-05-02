@@ -103,11 +103,19 @@ class ResizableKalman(FilterBase):
         self.P_hat_t = np.identity(self.F_t_len)
 
         # Store acceleration noise std dev for Q matrix computation (updated each timestep)
-        self.sigma_a = 2.0  # m/s^2 - standard deviation of random acceleration
+        from filters.filter_config import get_sigma_a
+        self.sigma_a = get_sigma_a("ekf")
 
         # Adaptive process noise: store last measurement covariance for position block of Q
         # This makes Q adapt to GPEM predictions - if sensor says uncertainty is high, Q is high
         self.last_measurement_cov = None  # 2x2 position covariance from last measurement
+
+        # Prediction cache: getKalmanPredWithCovariance stores its result here so that
+        # the immediately-following fusion() call can skip re-running the identical
+        # F computation and kalman_prediction matrix multiply.
+        self._pred_cache_time = None
+        self._pred_cache_X = None
+        self._pred_cache_P = None
 
         # Now apply mode-specific initializations
         if self.fusion_mode == 0:
@@ -206,7 +214,7 @@ class ResizableKalman(FilterBase):
                 self.localTrackersMeasurementList.append(
                     np.array([match.x, match.y, match.angle]))
                 # Expand 2x2 position covariance to 3x3 with heading variance
-                angle_variance = 0.1  # ~18 deg std dev for heading measurement
+                angle_variance = match.yaw_variance if match.yaw_variance is not None else 0.1
                 cov_3x3 = np.eye(3, dtype='float')
                 # Ensure we extract 2x2 from match.covariance even if it's larger
                 match_cov = np.asarray(match.covariance, dtype='float')
@@ -255,13 +263,12 @@ class ResizableKalman(FilterBase):
         if len(self.localTrackersCovarianceList) == 1:
             return self.localTrackersMeasurementList[0], self.localTrackersCovarianceList[0]
 
-        # Precision-weighted fusion: P_fused = (Σ P_i^-1)^-1, x_fused = P_fused · Σ(P_i^-1 · x_i)
-        precision_sum = np.zeros((2, 2))
-        weighted_pos = np.zeros(2)
-        for meas, cov in zip(self.localTrackersMeasurementList, self.localTrackersCovarianceList):
-            P_inv = np.linalg.inv(cov[:2, :2])
-            precision_sum += P_inv
-            weighted_pos += P_inv @ meas[:2]
+        # Batch precision-weighted fusion: P_fused = (Σ P_i^-1)^-1, x_fused = P_fused · Σ(P_i^-1 · x_i)
+        cov_stack = np.array([c[:2, :2] for c in self.localTrackersCovarianceList]) + 1e-8 * np.eye(2)
+        pos_stack = np.array([m[:2] for m in self.localTrackersMeasurementList])
+        prec_stack = np.linalg.inv(cov_stack)  # (N, 2, 2) batch inverse
+        precision_sum = prec_stack.sum(axis=0)
+        weighted_pos = np.einsum('nij,nj->i', prec_stack, pos_stack)
 
         fused_cov = np.linalg.inv(precision_sum)
         fused_pos = fused_cov @ weighted_pos
@@ -388,11 +395,16 @@ class ResizableKalman(FilterBase):
                                     [0, 0, 0, 1, elapsed],
                                     [0, 0, 0, 0, 1]], dtype='float')
 
-            # Compute process noise Q for this timestep
-            self.Q_t = self._compute_Q(elapsed)
-
-            self.X_hat_t, self.P_hat_t = utils.kalman_prediction(
-                self.X_hat_t, self.P_hat_t, self.F_t, self.B_t, self.U_t, self.Q_t)
+            # Reuse prediction from getKalmanPredWithCovariance if it was called
+            # for this same timestamp (avoids recomputing identical F and matrix multiply).
+            if self._pred_cache_time == time:
+                self.X_hat_t = self._pred_cache_X
+                self.P_hat_t = self._pred_cache_P
+                self._pred_cache_time = None  # consumed; invalidate
+            else:
+                self.Q_t = self._compute_Q(elapsed)
+                self.X_hat_t, self.P_hat_t = utils.kalman_prediction(
+                    self.X_hat_t, self.P_hat_t, self.F_t, self.B_t, self.U_t, self.Q_t)
 
             # Process measurements
             added = 0
@@ -442,16 +454,14 @@ class ResizableKalman(FilterBase):
                         positions = [mu[:2] for mu in valid_measurements]
                         pos_covs = [cov[:2, :2] if cov.shape[0] >= 2 else cov for cov in valid_covariances]
 
-                        # Compute measurement precisions only
-                        precision_sum = np.zeros((2, 2))
-                        weighted_sum = np.zeros(2)
-                        for pc, pos in zip(pos_covs, positions):
-                            try:
-                                prec = np.linalg.inv(pc)
-                            except np.linalg.LinAlgError:
-                                prec = np.linalg.inv(pc + 0.01 * np.eye(2))
-                            precision_sum += prec
-                            weighted_sum += prec @ pos
+                        # Batch precision-weighted fusion: vectorized matrix inversions
+                        cov_stack = np.array(pos_covs)  # (N, 2, 2)
+                        pos_stack = np.array(positions)  # (N, 2)
+                        # Regularize near-singular covariances
+                        cov_stack += 1e-8 * np.eye(2)
+                        prec_stack = np.linalg.inv(cov_stack)  # (N, 2, 2) batch inverse
+                        precision_sum = prec_stack.sum(axis=0)  # (2, 2)
+                        weighted_sum = np.einsum('nij,nj->i', prec_stack, pos_stack)  # (2,)
 
                         # Fused covariance = inverse of summed precisions
                         try:
@@ -750,5 +760,10 @@ class ResizableKalman(FilterBase):
                 self.X_hat_t, self.P_hat_t, F_pred, self.B_t, self.U_t, self.Q_t)
             predicted_x = predicted_X_hat[0][0]
             predicted_y = predicted_X_hat[1][0]
+
+            # Cache so fusion() can skip re-computing the identical prediction step
+            self._pred_cache_time = time
+            self._pred_cache_X = predicted_X_hat
+            self._pred_cache_P = predicted_P
 
         return predicted_x, predicted_y, predicted_P

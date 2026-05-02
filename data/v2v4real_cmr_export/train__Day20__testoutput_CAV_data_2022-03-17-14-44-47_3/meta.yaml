@@ -1,0 +1,9 @@
+scenario_id: Day20/testoutput_CAV_data_2022-03-17-14-44-47_3
+detector: centerpoint_nus
+center_world: [-285.896937, -3065.706036, -21.845594]
+vehicles: [astuff, tesla]
+n_frames_per_vehicle: {'astuff': 111, 'tesla': 111}
+frame_rate_hz: 10.000000
+n_detections_total: 45252
+n_gt_total: 1508
+split: train

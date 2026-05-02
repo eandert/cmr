@@ -1,0 +1,13 @@
+{
+  "config_name": "lag_5steps_notrust",
+  "num_runs": 10,
+  "avg_global_amota_mean": 0.4532020727509457,
+  "avg_global_amota_std": 0.03762202028172526,
+  "avg_cis_amota_mean": 0.9908095044513305,
+  "avg_cis_amota_std": 0.0006305041818634073,
+  "avg_cav_amota_mean": 0.9939233830223917,
+  "avg_cav_amota_std": 0.0007910146284084391,
+  "avg_perception_anomalies_mean": 0,
+  "avg_perception_anomalies_std": 0.0,
+  "total_anomaly_detections": 0
+}

@@ -1,0 +1,36 @@
+{
+  "name": "Error_Severity_Sweep",
+  "description": "Test error severity levels with 10% of CAVs affected, PointPillars OS1_128",
+  "runs_per_config": 1,
+  "warmup_steps": 100,
+  "record_steps": 200,
+  "max_steps": null,
+  "error_injection_start": 100,
+  "error_injection_end": null,
+  "baseline": {
+    "name": "baseline_no_errors",
+    "description": "PointPillars OS1_128 baseline with no injected errors"
+  },
+  "variants": [
+    {
+      "name": "extrinsics_5deg",
+      "description": "Sensor calibration error: 5 degrees (10% of CAVs)"
+    },
+    {
+      "name": "localization_50pct",
+      "description": "Localization error: 50% of max (10% of CAVs)"
+    },
+    {
+      "name": "mal_remove_50pct",
+      "description": "Malicious removal: 50% prob/frame (10% of CAVs)"
+    },
+    {
+      "name": "mal_add_50pct",
+      "description": "Malicious addition: 50% prob/frame (10% of CAVs)"
+    },
+    {
+      "name": "mal_convoy_50pct",
+      "description": "Malicious convoy: 50% prob/frame (10% of CAVs)"
+    }
+  ]
+}

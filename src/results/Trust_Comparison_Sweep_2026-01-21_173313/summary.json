@@ -1,0 +1,151 @@
+{
+  "suite_name": "Trust_Comparison_Sweep",
+  "completed_at": "2026-01-21T17:35:40.868812",
+  "total_runs": 60,
+  "results": {
+    "baseline": {
+      "num_runs": 5,
+      "avg_global_amota_mean": 0.49802813056797446,
+      "avg_global_amota_std": 0.053489096317713654,
+      "avg_cis_amota_mean": 0.9894658759348486,
+      "avg_cis_amota_std": 0.00253717452836723,
+      "avg_cav_amota_mean": 0.9946896856180365,
+      "avg_cav_amota_std": 0.0038362723194243294,
+      "avg_perception_anomalies_mean": 0,
+      "avg_perception_anomalies_std": 0.0,
+      "total_anomaly_detections": 0
+    },
+    "baseline_notrust": {
+      "num_runs": 5,
+      "avg_global_amota_mean": 0.5606890614301538,
+      "avg_global_amota_std": 0.05838247542690277,
+      "avg_cis_amota_mean": 0.9906737084476118,
+      "avg_cis_amota_std": 0.0017188490479720328,
+      "avg_cav_amota_mean": 0.9910734908547414,
+      "avg_cav_amota_std": 0.0008060889965145263,
+      "avg_perception_anomalies_mean": 0,
+      "avg_perception_anomalies_std": 0.0,
+      "total_anomaly_detections": 0
+    },
+    "extrinsics_5deg_trust": {
+      "num_runs": 5,
+      "avg_global_amota_mean": 0.5355123577455994,
+      "avg_global_amota_std": 0.07061167979539623,
+      "avg_cis_amota_mean": 0.990548817469985,
+      "avg_cis_amota_std": 0.0012412784706369092,
+      "avg_cav_amota_mean": 0.9876814147187232,
+      "avg_cav_amota_std": 0.010766954600177058,
+      "avg_perception_anomalies_mean": 0.6,
+      "avg_perception_anomalies_std": 0.5477225575051661,
+      "total_anomaly_detections": 3
+    },
+    "extrinsics_5deg_notrust": {
+      "num_runs": 5,
+      "avg_global_amota_mean": 0.5479560899574181,
+      "avg_global_amota_std": 0.06731682603737627,
+      "avg_cis_amota_mean": 0.989445397851505,
+      "avg_cis_amota_std": 0.001668791436875188,
+      "avg_cav_amota_mean": 0.9810807871143646,
+      "avg_cav_amota_std": 0.024651124131834838,
+      "avg_perception_anomalies_mean": 0.8,
+      "avg_perception_anomalies_std": 1.3038404810405297,
+      "total_anomaly_detections": 4
+    },
+    "localization_50pct_trust": {
+      "num_runs": 5,
+      "avg_global_amota_mean": 0.5369317497328288,
+      "avg_global_amota_std": 0.058222938805857626,
+      "avg_cis_amota_mean": 0.9902799550881113,
+      "avg_cis_amota_std": 0.0014185083424520328,
+      "avg_cav_amota_mean": 0.9916046529055723,
+      "avg_cav_amota_std": 0.003818400466474096,
+      "avg_perception_anomalies_mean": 0,
+      "avg_perception_anomalies_std": 0.0,
+      "total_anomaly_detections": 0
+    },
+    "localization_50pct_notrust": {
+      "num_runs": 5,
+      "avg_global_amota_mean": 0.5335738220019781,
+      "avg_global_amota_std": 0.0746772333144266,
+      "avg_cis_amota_mean": 0.9905217487899751,
+      "avg_cis_amota_std": 0.00090713355326162,
+      "avg_cav_amota_mean": 0.9901608883231487,
+      "avg_cav_amota_std": 0.004934690363360157,
+      "avg_perception_anomalies_mean": 0,
+      "avg_perception_anomalies_std": 0.0,
+      "total_anomaly_detections": 0
+    },
+    "mal_remove_50pct_trust": {
+      "num_runs": 5,
+      "avg_global_amota_mean": 0.5487250292110485,
+      "avg_global_amota_std": 0.0808379491118873,
+      "avg_cis_amota_mean": 0.9906877854924256,
+      "avg_cis_amota_std": 0.0014667495748769282,
+      "avg_cav_amota_mean": 0.9902827426960996,
+      "avg_cav_amota_std": 0.0019141216535151697,
+      "avg_perception_anomalies_mean": 0.4,
+      "avg_perception_anomalies_std": 0.8944271909999159,
+      "total_anomaly_detections": 2
+    },
+    "mal_remove_50pct_notrust": {
+      "num_runs": 5,
+      "avg_global_amota_mean": 0.5097027524661037,
+      "avg_global_amota_std": 0.03761476970569135,
+      "avg_cis_amota_mean": 0.9901235074053795,
+      "avg_cis_amota_std": 0.0011120723153492458,
+      "avg_cav_amota_mean": 0.9939572313481343,
+      "avg_cav_amota_std": 0.0017061648516682034,
+      "avg_perception_anomalies_mean": 0.4,
+      "avg_perception_anomalies_std": 0.8944271909999159,
+      "total_anomaly_detections": 2
+    },
+    "mal_add_50pct_trust": {
+      "num_runs": 5,
+      "avg_global_amota_mean": 0.5646169847216475,
+      "avg_global_amota_std": 0.0661108412075948,
+      "avg_cis_amota_mean": 0.9906574792285369,
+      "avg_cis_amota_std": 0.0018330374042101014,
+      "avg_cav_amota_mean": 0.9916471076454835,
+      "avg_cav_amota_std": 0.004224285367335141,
+      "avg_perception_anomalies_mean": 0,
+      "avg_perception_anomalies_std": 0.0,
+      "total_anomaly_detections": 0
+    },
+    "mal_add_50pct_notrust": {
+      "num_runs": 5,
+      "avg_global_amota_mean": 0.5514430390515233,
+      "avg_global_amota_std": 0.04241167066453031,
+      "avg_cis_amota_mean": 0.9899380960210902,
+      "avg_cis_amota_std": 0.0020043403603005982,
+      "avg_cav_amota_mean": 0.9905781829698135,
+      "avg_cav_amota_std": 0.002384884172172201,
+      "avg_perception_anomalies_mean": 0.4,
+      "avg_perception_anomalies_std": 0.8944271909999159,
+      "total_anomaly_detections": 2
+    },
+    "mal_convoy_50pct_trust": {
+      "num_runs": 5,
+      "avg_global_amota_mean": 0.526486784449305,
+      "avg_global_amota_std": 0.038792210682454274,
+      "avg_cis_amota_mean": 0.9918630601638694,
+      "avg_cis_amota_std": 0.00080484451444631,
+      "avg_cav_amota_mean": 0.9928299028187527,
+      "avg_cav_amota_std": 0.0029284771057603723,
+      "avg_perception_anomalies_mean": 0,
+      "avg_perception_anomalies_std": 0.0,
+      "total_anomaly_detections": 0
+    },
+    "mal_convoy_50pct_notrust": {
+      "num_runs": 5,
+      "avg_global_amota_mean": 0.5494086815283922,
+      "avg_global_amota_std": 0.08876098004804392,
+      "avg_cis_amota_mean": 0.9903238128753857,
+      "avg_cis_amota_std": 0.0009648436188701971,
+      "avg_cav_amota_mean": 0.9940205653370756,
+      "avg_cav_amota_std": 0.005580291712326869,
+      "avg_perception_anomalies_mean": 0.4,
+      "avg_perception_anomalies_std": 0.8944271909999159,
+      "total_anomaly_detections": 2
+    }
+  }
+}

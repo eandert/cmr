@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<edges>
+    <!-- Main E-W corridor (55 mph) -->
+    <edge id="W_C1" from="W" to="C1" numLanes="1" speed="24.59" priority="3"/>
+    <edge id="C1_W" from="C1" to="W" numLanes="1" speed="24.59" priority="3"/>
+    <edge id="C1_C2" from="C1" to="C2" numLanes="1" speed="24.59" priority="3"/>
+    <edge id="C2_C1" from="C2" to="C1" numLanes="1" speed="24.59" priority="3"/>
+    <edge id="C2_E" from="C2" to="E" numLanes="1" speed="24.59" priority="3"/>
+    <edge id="E_C2" from="E" to="C2" numLanes="1" speed="24.59" priority="3"/>
+    <!-- N1 feeder (curves west) -->
+    <edge id="N1_C1" from="N1" to="C1" numLanes="1" speed="20.12" priority="1" shape="-30,500 -25,380 -15,250 -5,120 0,0"/>
+    <edge id="C1_N1" from="C1" to="N1" numLanes="1" speed="20.12" priority="1" shape="0,0 -5,120 -15,250 -25,380 -30,500"/>
+    <!-- S1 feeder (straight) -->
+    <edge id="S1_C1" from="S1" to="C1" numLanes="1" speed="20.12" priority="1"/>
+    <edge id="C1_S1" from="C1" to="S1" numLanes="1" speed="20.12" priority="1"/>
+    <!-- N2 feeder (straight) -->
+    <edge id="N2_C2" from="N2" to="C2" numLanes="1" speed="20.12" priority="1"/>
+    <edge id="C2_N2" from="C2" to="N2" numLanes="1" speed="20.12" priority="1"/>
+    <!-- S2 feeder (curves east) -->
+    <edge id="S2_C2" from="S2" to="C2" numLanes="1" speed="20.12" priority="1" shape="530,-500 525,-380 515,-250 505,-120 500,0"/>
+    <edge id="C2_S2" from="C2" to="S2" numLanes="1" speed="20.12" priority="1" shape="500,0 505,-120 515,-250 525,-380 530,-500"/>
+</edges>

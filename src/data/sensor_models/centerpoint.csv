@@ -1,16 +1,20 @@
-# CenterPoint (lidar only) - from mmdetection3d
-# Linear model: abs_error = intercept + slope * distance
-# Quadratic model: abs_error = quad_a * d^2 + quad_b * d + quad_c
+# CenterPoint (lidar only) 100m - from mmdetection3d
+# MAE linear: abs_error = intercept + slope * distance
+# MAE quadratic: abs_error = quad_a * d^2 + quad_b * d + quad_c
+# Std linear: std = std_intercept + std_slope * distance
+# Std quadratic: std = std_quad_a * d^2 + std_quad_b * d + std_quad_c
+# Var linear: var = var_intercept + var_slope * distance
+# Var quadratic: var = var_quad_a * d^2 + var_quad_b * d + var_quad_c
 # Bias linear: signed_bias = bias_intercept + bias_slope * distance
 # Bias quadratic: signed_bias = bias_quad_a * d^2 + bias_quad_b * d + bias_quad_c
-# For covariance: std = 1.253 * abs_error (half-normal to std conversion)
+# MSE (for R matrix) = bias^2 + variance (bias-variance decomposition)
 
-error_type,intercept,slope,quad_a,quad_b,quad_c,bias_intercept,bias_slope,bias_quad_a,bias_quad_b,bias_quad_c,unit,notes
-radial,0.064028,0.003314,-8.638758e-06,0.003791796,0.05894325,-0.003557,0.000215,-3.243436e-06,0.0003946878,-0.005465741,meters,Range error
-lateral,0.042451,0.00294,7.275561e-06,0.002537402,0.04673323,0.000871,-0.00038,-6.149249e-06,-3.977122e-05,-0.002748256,meters,Cross-range error
-vertical,0.037665,0.002469,6.084055e-07,0.002435695,0.03802281,0.007228,-0.000254,-1.343945e-05,0.0004895857,-0.0006823273,meters,Elevation error
-yaw,0.143365,-0.001534,4.677049e-05,-0.004123582,0.1708927,-0.003265,0.000116,-2.468843e-06,0.000252333,-0.004718562,radians,Heading angle
-width,0.119289,0.00579,1.179002e-05,0.005137101,0.1262277,-0.027056,0.000559,1.872348e-06,0.000455316,-0.02595431,meters,Box width
-length,0.089974,0.001185,-3.492296e-06,0.001378088,0.08791906,0.0083,0.000248,-2.33164e-06,0.0003770474,0.006927626,meters,Box length
-box_height,0.069739,0.002098,7.127187e-07,0.002058271,0.07015834,-0.006563,0.000185,1.398147e-05,-0.0005887568,0.001665997,meters,Box height
-miss_rate,0.139875,0.009674,6.298688e-05,0.00460102,0.2136383,,,,,,probability,Miss rate
+error_type,intercept,slope,quad_a,quad_b,quad_c,bias_intercept,bias_slope,bias_quad_a,bias_quad_b,bias_quad_c,std_intercept,std_slope,std_quad_a,std_quad_b,std_quad_c,var_intercept,var_slope,var_quad_a,var_quad_b,var_quad_c,unit,notes
+radial,0.100287,0.00264,-2.272246e-05,0.004229588,0.07909262,-0.004553,0.000361,-1.576466e-05,0.001463538,-0.01925719,0.16667,0.002753,-3.008839e-05,0.005911945,0.1093141,-0.002132,0.002301,1.752068e-05,0.0004615959,0.03126651,meters,Range error
+lateral,0.063432,0.002547,-1.64946e-05,0.00370057,0.04804685,0.000424,-0.00038,3.738747e-06,-0.0006417039,0.003911692,0.131927,0.002305,-2.88176e-05,0.005330622,0.07699361,0.003959,0.001368,-7.892098e-07,0.001450668,0.002454596,meters,Cross-range error
+vertical,0.045176,0.002404,-7.955794e-06,0.002960379,0.037755,0.00887,-0.000378,-8.561547e-06,0.0002208029,0.0008843975,0.093453,0.002022,-3.009724e-05,0.005182569,0.03608018,0.002923,0.000813,-6.825132e-06,0.001529408,-0.0100872,meters,Elevation error
+yaw,0.022635,0.000757,-1.08661e-05,0.001517402,0.01249993,-0.000732,8e-06,-6.180613e-07,5.107713e-05,-0.001308589,0.060455,0.000304,-1.286687e-05,0.001655029,0.03592786,0.003736,4.9e-05,-1.486488e-06,0.000204697,0.0009024295,radians,Heading angle
+width,0.207719,0.00417,-4.720758e-06,0.004500188,0.2033154,-0.032064,0.000764,-1.644124e-06,0.0008793464,-0.03359741,0.32546,0.005757,-2.746709e-05,0.008641315,0.273101,-0.032186,0.009896,9.846746e-05,-0.0004426568,0.1555174,meters,Box width
+length,0.1091,0.000831,-1.742864e-06,0.000952952,0.107474,0.016649,3.7e-05,-1.245412e-05,0.0009084564,0.00503223,0.150346,0.000856,-1.395401e-05,0.002321151,0.1237458,0.019089,0.000422,-1.319439e-06,0.0005604272,0.0165742,meters,Box length
+box_height,0.083587,0.001968,-3.897691e-06,0.002240303,0.07995186,-0.000519,-9.5e-05,-1.829971e-05,0.00118501,-0.01758817,0.142261,0.001806,-2.265557e-05,0.004184778,0.09907426,0.014204,0.000901,-5.617717e-06,0.001491109,0.003495698,meters,Box height
+miss_rate,-0.12767,0.010962,3.053479e-05,0.008317359,-0.0851742,,,,,,,,,,,,,,,,probability,Miss rate

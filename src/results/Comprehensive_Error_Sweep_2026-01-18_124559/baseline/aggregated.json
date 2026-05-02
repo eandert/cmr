@@ -1,0 +1,10 @@
+{
+  "config_name": "baseline",
+  "num_runs": 1,
+  "avg_global_amota_mean": 0.5790493166963756,
+  "avg_global_amota_std": 0,
+  "avg_cis_amota_mean": 0.9960256410256412,
+  "avg_cis_amota_std": 0,
+  "avg_cav_amota_mean": 0.0,
+  "avg_cav_amota_std": 0
+}

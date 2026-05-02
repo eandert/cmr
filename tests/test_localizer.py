@@ -187,5 +187,55 @@ class TestVelocityBin(unittest.TestCase):
         self.assertAlmostEqual(np.std(samples), 0.1, places=1)
 
 
+class TestLocalizerModelDataMapping(unittest.TestCase):
+    """Regression test: all localizer names used in experiments must resolve
+    to valid model_data (with bias/var regressions for MSE computation).
+    Without this, get_longitudinal_mse() silently falls back to std² which
+    can underestimate localization variance by 4×+."""
+
+    EXPERIMENT_LOCALIZER_NAMES = [
+        "kiss_icp", "kiss_icp_noisy",
+        "kiss_icp_clean_seed", "kiss_icp_noisy_seed",
+        "CT_ICP", "orb_slam3",
+    ]
+
+    def test_all_localizer_names_in_models_dict(self):
+        """Every localizer name used in experiments must map in LOCALIZER_MODELS."""
+        for name in self.EXPERIMENT_LOCALIZER_NAMES:
+            self.assertIn(name, LOCALIZER_MODELS,
+                         f"'{name}' missing from LOCALIZER_MODELS — model_data will be None, "
+                         f"MSE falls back to std² silently")
+
+    def test_all_localizers_have_model_data(self):
+        """get_localizer() must produce non-None _model_data for all experiment localizers."""
+        ep = make_error_package()
+        for name in self.EXPERIMENT_LOCALIZER_NAMES:
+            loc = get_localizer(name, ep, use_gpem_model=True)
+            self.assertIsNotNone(loc._model_data,
+                                f"'{name}' has _model_data=None — MSE will use std² fallback")
+
+    def test_mse_uses_var_regression_not_std_squared(self):
+        """MSE should use bias²+var regression, not just std². They should differ."""
+        ep = make_error_package()
+        for name in ["kiss_icp_noisy_seed", "kiss_icp_clean_seed"]:
+            loc = get_localizer(name, ep, use_gpem_model=True)
+            mse = loc.get_longitudinal_mse(15.0)
+            std = loc.get_longitudinal_localization_std(15.0)
+            # MSE and std² should NOT be identical (that would mean fallback)
+            self.assertNotAlmostEqual(mse, std**2, places=4,
+                                     msg=f"'{name}' MSE ({mse:.6f}) == std² ({std**2:.6f}) — "
+                                         f"model_data may not be loading (using std² fallback)")
+
+    def test_noisy_seed_localization_variance_is_significant(self):
+        """Noisy seed localizer should have variance >> 0.01 (not tiny std² fallback)."""
+        ep = make_error_package()
+        loc = get_localizer("kiss_icp_noisy_seed", ep, use_gpem_model=True)
+        cov = loc.get_localization_covariance(15.0, 0.0)
+        avg_var = np.mean(np.diag(cov))
+        self.assertGreater(avg_var, 0.05,
+                          f"Noisy seed variance {avg_var:.6f} is suspiciously small — "
+                          f"model_data may not be loaded (expected ~0.25)")
+
+
 if __name__ == "__main__":
     unittest.main()

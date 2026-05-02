@@ -1,0 +1,13 @@
+{
+  "config_name": "localization_20pct_trust",
+  "num_runs": 10,
+  "avg_global_amota_mean": 0.44034586274679594,
+  "avg_global_amota_std": 0.02395616397773886,
+  "avg_cis_amota_mean": 0.9908540293470456,
+  "avg_cis_amota_std": 0.000582639732531301,
+  "avg_cav_amota_mean": 0.9812285340276579,
+  "avg_cav_amota_std": 0.011654001691804078,
+  "avg_perception_anomalies_mean": 9.1,
+  "avg_perception_anomalies_std": 4.1486276177925525,
+  "total_anomaly_detections": 91
+}

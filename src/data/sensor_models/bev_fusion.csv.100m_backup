@@ -1,0 +1,16 @@
+# BEV Fusion (lidar+camera) 100m - from mmdetection3d
+# Linear model: abs_error = intercept + slope * distance
+# Quadratic model: abs_error = quad_a * d^2 + quad_b * d + quad_c
+# Bias linear: signed_bias = bias_intercept + bias_slope * distance
+# Bias quadratic: signed_bias = bias_quad_a * d^2 + bias_quad_b * d + bias_quad_c
+# For covariance: std = 1.253 * abs_error (half-normal to std conversion)
+
+error_type,intercept,slope,quad_a,quad_b,quad_c,bias_intercept,bias_slope,bias_quad_a,bias_quad_b,bias_quad_c,unit,notes
+radial,0.080734,0.002755,-9.561419e-06,0.00338831,0.07298947,0.022948,0.000168,-1.315157e-05,0.001038642,0.0122946,meters,Range error
+lateral,0.043551,0.002795,1.128463e-05,0.002048126,0.05269177,-0.006421,-0.000121,1.703417e-05,-0.001248752,0.007377273,meters,Cross-range error
+vertical,0.09476,0.002199,-1.854757e-05,0.003426838,0.07973598,-0.012312,-0.000731,4.771297e-05,-0.003889591,0.02633624,meters,Elevation error
+yaw,0.161934,-0.00105,1.72225e-05,-0.002189752,0.175884,0.01967,-0.000704,1.432685e-05,-0.001652227,0.03127455,radians,Heading angle
+width,0.268857,0.005129,-2.487789e-05,0.006775555,0.2487057,0.23814,-0.001865,-5.682286e-05,0.001897241,0.1921125,meters,Box width
+length,0.238295,-8.8e-05,7.227516e-06,-0.000566416,0.2441496,0.221039,-0.001054,-1.032783e-05,-0.0003697989,0.2126734,meters,Box length
+box_height,0.16396,0.001543,9.911663e-06,0.0008868019,0.1719882,0.160966,-0.000559,-2.638301e-05,0.001188129,0.1395953,meters,Box height
+miss_rate,0.501022,0.004587,1.11944e-05,0.003685262,0.5141313,,,,,,probability,Miss rate

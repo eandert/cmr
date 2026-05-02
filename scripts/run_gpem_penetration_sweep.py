@@ -97,7 +97,6 @@ def main():
     # Create the suite
     suite = create_gpem_penetration_sweep_suite(
         runs_per_config=args.runs,
-        av_injection_rates=[1.0, 2.5, 5.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0],
         warmup_steps=args.warmup,
         record_steps=args.record,
     )

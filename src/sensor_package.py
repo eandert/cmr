@@ -23,7 +23,7 @@ class SensorPackage:
         has_error (bool): Whether this CAV has permanent error flag (set at creation).
     """
     
-    def __init__(self, sensor_package_id, sensors, sensors_extrinsics, localizer, error_package, has_error=False):
+    def __init__(self, sensor_package_id, sensors, sensors_extrinsics, localizer, error_package, has_error=False, lifecycle_mode="log_odds"):
         """
         Initialize the SensorPackage with its ID, sensors, sensors' extrinsics, and localizer.
         
@@ -42,7 +42,8 @@ class SensorPackage:
         self.sensor_detection_sets = []
         self.detection_set_timestamp = None
         self.integer_id = utils.extract_id(sensor_package_id)
-        self.sensor_fusion = sensor_fusion.Fusion(self.integer_id)
+        self.lifecycle_mode = lifecycle_mode
+        self.sensor_fusion = sensor_fusion.Fusion(self.integer_id, lifecycle_mode=lifecycle_mode)
         self.localizer = localizer
         self.error = error_package
         self.has_error = has_error  # Permanent error flag for this CAV
@@ -212,8 +213,13 @@ class SensorPackage:
 
             self.sensor_detection_sets.append(detected_objects)
 
-            # Process and match the detections from each sensor (filtered to exclude ego)
-            filtered_detected_objects_for_fusion = [obj for obj in detected_objects if obj.vehicle_id != self.sensor_package_id]
+            # Process and match the detections from each sensor (filtered to exclude ego;
+            # also gate on det_score so low-confidence FPs don't enter the tracker)
+            filtered_detected_objects_for_fusion = [
+                obj for obj in detected_objects
+                if obj.vehicle_id != self.sensor_package_id
+                and getattr(obj, "det_score", 1.0) >= 0.3
+            ]
             self.sensor_fusion.processDetectionFrame(time, filtered_detected_objects_for_fusion, .3)
         
         # After all sensors have processed, populate the final detectable_ground_truth for this SensorPackage
@@ -240,9 +246,21 @@ class SensorPackage:
         self.detection_set_timestamp = time
 
         # Kick off the actual fusion process
-        result, visualization, _, _ = self.sensor_fusion.fuseDetectionFrame(time)
+        result, confirmed_track_objects, _, _ = self.sensor_fusion.fuseDetectionFrame(time)
 
-        return result, final_detected_objects_for_metrics, detectable_ground_truth
+        # Global fusion receives confirmed per-CAV tracks with fresh sensor backing only.
+        # Coasting confirmed tracks (no new detection this frame) are not forwarded —
+        # a V2V node only broadcasts what it freshly observed. The global tracker
+        # will miss-decay those tracks itself, naturally inflating their uncertainty.
+        # Self-localization bypasses the local tracker and always goes directly.
+        confirmed_for_global = [
+            d for d in confirmed_track_objects
+            if abs(getattr(d, 'last_measurement', time) - time) < 0.05
+        ]
+        if self_localization_detection is not None:
+            confirmed_for_global.append(self_localization_detection)
+
+        return result, final_detected_objects_for_metrics, confirmed_for_global, detectable_ground_truth
 
     def _create_self_localization_detection(self, ego_ground_truth, believed_ego_pose, velocity, loc_covariance):
         """
@@ -290,7 +308,7 @@ class SensorPackage:
             width_std=0.1,  # Low uncertainty on own dimensions
             length_std=0.1
         )
-        
+        self_detection.p_tp = 0.99  # Self-localization is highly reliable
         return self_detection
 
     def draw_detected_objects(self, traci_instance, polygon_ids):

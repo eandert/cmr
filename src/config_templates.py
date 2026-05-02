@@ -4,15 +4,20 @@ Configuration templates for CMR simulation.
 Each template returns a configuration dictionary that can be passed to run_simulation().
 Templates can be modified or extended for specific experiments.
 
-Maps: "single" (default), "tempe_2x3". Use with_sumo_map(config, "tempe_2x3") to switch map.
+Maps: "fast_city" (default), "fast_highway", "fast_rural", "city", "highway", "rural". Use with_sumo_map(config, name) to switch map.
 """
 
 import os
 import copy
 
 # Available SUMO map directories under maps/
-SUMO_MAP_SINGLE = "single"
-SUMO_MAP_TEMPE_2X3 = "tempe_2x3"
+SUMO_MAP_FAST_CITY = "fast_city"
+SUMO_MAP_FAST_HIGHWAY = "fast_highway"
+SUMO_MAP_FAST_RURAL = "fast_rural"
+SUMO_MAP_CITY = "city"
+SUMO_MAP_HIGHWAY = "highway"
+SUMO_MAP_RURAL = "rural"
+SUMO_MAP_TEMPE_2X3 = "tempe_2x3"  # legacy alias
 
 
 def with_sumo_map(config, map_subdir):
@@ -21,7 +26,7 @@ def with_sumo_map(config, map_subdir):
 
     Args:
         config: Configuration dict (e.g. from get_perfect_config(), get_pointpillars_os1_128_config()).
-        map_subdir: One of "single", "tempe_2x3" (directory name under maps/).
+        map_subdir: One of "fast_city", "fast_highway", "fast_rural", "city", "highway", "rural" (directory name under maps/).
 
     Returns:
         New config dict with sumo_config_path set to maps/<map_subdir>/osm.sumocfg.
@@ -41,7 +46,7 @@ def get_base_config():
     """
     return {
         # SUMO simulation settings
-        "sumo_config_path": os.path.join("maps", "single", "osm.sumocfg"),
+        "sumo_config_path": os.path.join("maps", "fast_city", "osm.sumocfg"),
         "step_length": 0.1,
 
         # Sensor and detector configurations
@@ -70,7 +75,7 @@ def get_base_config():
         # Error modeling settings
         "use_gpem_model": False,  # Use GPEM parameterized error model vs static covariance
         "use_quadratic": False,  # Use quadratic regression instead of linear (when use_gpem_model=True)
-        "detector_max_range": 70.0,  # Max detection range in meters (cuts noisy far-range data)
+        "detector_max_range": 100.0,  # Max detection range in meters (matches 100m evaluation data)
 
         # Visualization settings (off by default for automated runs)
         "visualize_ground_truth": False,

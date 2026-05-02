@@ -1,0 +1,13 @@
+{
+  "config_name": "high_miss_80pct_trust",
+  "num_runs": 10,
+  "avg_global_amota_mean": 0.4539317622202159,
+  "avg_global_amota_std": 0.04050245784695349,
+  "avg_cis_amota_mean": 0.9906899893151562,
+  "avg_cis_amota_std": 0.0005583029231679431,
+  "avg_cav_amota_mean": 0.9940795563504697,
+  "avg_cav_amota_std": 0.0006134696492261704,
+  "avg_perception_anomalies_mean": 4.5,
+  "avg_perception_anomalies_std": 3.3747427885527643,
+  "total_anomaly_detections": 45
+}

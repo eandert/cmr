@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nodes>
+    <!-- Signalized 4-way intersection with 500m approaches -->
+    <!-- 1 lane for 400m, widens to 3 lanes (L/T/R) at 100m from center -->
+    <node id="100" x="0" y="0" type="traffic_light"/>
+    <!-- Widen points (100m from center) -->
+    <node id="NW" x="0" y="100"/>
+    <node id="SW" x="0" y="-100"/>
+    <node id="EW" x="100" y="0"/>
+    <node id="WW" x="-100" y="0"/>
+    <!-- Far endpoints — N and E are offset to create gentle curves -->
+    <node id="N" x="40" y="500"/>
+    <node id="S" x="0" y="-500"/>
+    <node id="E" x="500" y="-35"/>
+    <node id="W" x="-500" y="0"/>
+</nodes>

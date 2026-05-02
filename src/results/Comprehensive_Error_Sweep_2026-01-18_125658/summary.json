@@ -1,0 +1,466 @@
+{
+  "suite_name": "Comprehensive_Error_Sweep",
+  "completed_at": "2026-01-18T12:57:24.978555",
+  "total_runs": 51,
+  "results": {
+    "baseline": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6441767080655976,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9948320413436691,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.9946859903381643,
+      "avg_cav_amota_std": 0
+    },
+    "extrinsics_1pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6339929214929215,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9944876783398183,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.0,
+      "avg_cav_amota_std": 0
+    },
+    "extrinsics_2pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.5986795571578187,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9969635627530364,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.9940476190476191,
+      "avg_cav_amota_std": 0
+    },
+    "extrinsics_3pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6440062102399764,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9966666666666667,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 1.0,
+      "avg_cav_amota_std": 0
+    },
+    "extrinsics_4pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6638956584816457,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9880952380952379,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.9925925925925926,
+      "avg_cav_amota_std": 0
+    },
+    "extrinsics_5pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6617288736691721,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9901185770750986,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.9915094339622641,
+      "avg_cav_amota_std": 0
+    },
+    "extrinsics_6pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6033869173996566,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9922480620155038,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.0,
+      "avg_cav_amota_std": 0
+    },
+    "extrinsics_7pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6736038708765982,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9942176870748298,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.9920489296636086,
+      "avg_cav_amota_std": 0
+    },
+    "extrinsics_8pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6224678760393049,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9967948717948717,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 1.0,
+      "avg_cav_amota_std": 0
+    },
+    "extrinsics_9pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6233947906609776,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9935636856368565,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.0,
+      "avg_cav_amota_std": 0
+    },
+    "extrinsics_10pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.5562077693395011,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9965986394557823,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.9939196525515743,
+      "avg_cav_amota_std": 0
+    },
+    "localization_1pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6576463966516323,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.996347941567065,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 1.0,
+      "avg_cav_amota_std": 0
+    },
+    "localization_2pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6288862846555153,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9930065359477125,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.9696969696969697,
+      "avg_cav_amota_std": 0
+    },
+    "localization_3pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6421932333857475,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9900793650793651,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.9914089347079038,
+      "avg_cav_amota_std": 0
+    },
+    "localization_4pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6632516102059252,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.996031746031746,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.9922737306843268,
+      "avg_cav_amota_std": 0
+    },
+    "localization_5pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6131933445957838,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9955601092896175,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.0,
+      "avg_cav_amota_std": 0
+    },
+    "localization_6pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.5546915840211932,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9939834024896267,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.9977477477477477,
+      "avg_cav_amota_std": 0
+    },
+    "localization_7pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6126202856972092,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9964334705075446,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.0,
+      "avg_cav_amota_std": 0
+    },
+    "localization_8pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.5372922464440324,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9939516129032258,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.9957295373665481,
+      "avg_cav_amota_std": 0
+    },
+    "localization_9pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6011033347240244,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9887566137566137,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.9919354838709677,
+      "avg_cav_amota_std": 0
+    },
+    "localization_10pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6174488980244376,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9919028340080971,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.0,
+      "avg_cav_amota_std": 0
+    },
+    "mal_remove_1pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6372364603846085,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.989406779661017,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 1.0,
+      "avg_cav_amota_std": 0
+    },
+    "mal_remove_2pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6319845834638733,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9965564738292011,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.9970760233918129,
+      "avg_cav_amota_std": 0
+    },
+    "mal_remove_3pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.5982116402116404,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9891732283464567,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 1.0,
+      "avg_cav_amota_std": 0
+    },
+    "mal_remove_4pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.5953341360626131,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.984281842818428,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.0,
+      "avg_cav_amota_std": 0
+    },
+    "mal_remove_5pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6026512934796959,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9939271255060729,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.9936936936936936,
+      "avg_cav_amota_std": 0
+    },
+    "mal_remove_6pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6181831380002113,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9927536231884058,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.0,
+      "avg_cav_amota_std": 0
+    },
+    "mal_remove_7pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6310679219770131,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.992063492063492,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.9734848484848485,
+      "avg_cav_amota_std": 0
+    },
+    "mal_remove_8pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6274224907037408,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9901960784313725,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 1.0,
+      "avg_cav_amota_std": 0
+    },
+    "mal_remove_9pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6857283900672336,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9973958333333333,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.9955555555555556,
+      "avg_cav_amota_std": 0
+    },
+    "mal_remove_10pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6711261397125273,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9919947506561679,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.9970501474926254,
+      "avg_cav_amota_std": 0
+    },
+    "mal_add_1pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6040226070226072,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9950617283950618,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.0,
+      "avg_cav_amota_std": 0
+    },
+    "mal_add_2pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6172749738618005,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9953886693017127,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.0,
+      "avg_cav_amota_std": 0
+    },
+    "mal_add_3pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6209572663276367,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.996,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.9854838709677419,
+      "avg_cav_amota_std": 0
+    },
+    "mal_add_4pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.5954365079365082,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9937169312169312,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.0,
+      "avg_cav_amota_std": 0
+    },
+    "mal_add_5pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6276557909210968,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9970548862115127,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.9953703703703703,
+      "avg_cav_amota_std": 0
+    },
+    "mal_add_6pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6333254480795468,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9967700258397931,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.0,
+      "avg_cav_amota_std": 0
+    },
+    "mal_add_7pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.5552021500957675,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9987228607918262,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.9978070175438595,
+      "avg_cav_amota_std": 0
+    },
+    "mal_add_8pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6213428932178935,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9967948717948717,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.0,
+      "avg_cav_amota_std": 0
+    },
+    "mal_add_9pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.5961370141698016,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.994967320261438,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 1.0,
+      "avg_cav_amota_std": 0
+    },
+    "mal_add_10pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6130042180042183,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9930555555555556,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.997245179063361,
+      "avg_cav_amota_std": 0
+    },
+    "mal_convoy_1pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.5373830544815004,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9897486772486773,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 1.0,
+      "avg_cav_amota_std": 0
+    },
+    "mal_convoy_2pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6125238710781381,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9959349593495935,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.9868932038834951,
+      "avg_cav_amota_std": 0
+    },
+    "mal_convoy_3pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6564422485529047,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9947089947089947,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.9984567901234568,
+      "avg_cav_amota_std": 0
+    },
+    "mal_convoy_4pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6205961007591444,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9953703703703705,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.0,
+      "avg_cav_amota_std": 0
+    },
+    "mal_convoy_5pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6179273650326286,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9881889763779528,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.99,
+      "avg_cav_amota_std": 0
+    },
+    "mal_convoy_6pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6462871188361382,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9967061923583662,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.0,
+      "avg_cav_amota_std": 0
+    },
+    "mal_convoy_7pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.5469471985601021,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9966124661246613,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.9914285714285714,
+      "avg_cav_amota_std": 0
+    },
+    "mal_convoy_8pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.5925941862688852,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9940104166666667,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.0,
+      "avg_cav_amota_std": 0
+    },
+    "mal_convoy_9pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.6160494290552099,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9967824967824969,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.0,
+      "avg_cav_amota_std": 0
+    },
+    "mal_convoy_10pct": {
+      "num_runs": 1,
+      "avg_global_amota_mean": 0.637284445878196,
+      "avg_global_amota_std": 0,
+      "avg_cis_amota_mean": 0.9944225721784777,
+      "avg_cis_amota_std": 0,
+      "avg_cav_amota_mean": 0.9939102564102564,
+      "avg_cav_amota_std": 0
+    }
+  }
+}

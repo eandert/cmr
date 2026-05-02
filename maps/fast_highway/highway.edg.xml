@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<edges>
+    <!-- Eastbound main -->
+    <edge id="WA" from="W" to="A" numLanes="2" speed="31.29" priority="3"/>
+    <edge id="AB" from="A" to="B" numLanes="2" speed="31.29" priority="3" shape="100,0 175,8 250,22 350,40"/>
+    <edge id="BC" from="B" to="C" numLanes="2" speed="31.29" priority="3"/>
+    <edge id="CR" from="C" to="R" numLanes="2" speed="31.29" priority="3" shape="600,40 650,32 700,22 725,15"/>
+    <edge id="RD" from="R" to="D" numLanes="2" speed="31.29" priority="3" shape="725,15 760,8 800,-2 850,-10"/>
+    <edge id="DE" from="D" to="E" numLanes="2" speed="31.29" priority="3"/>
+    <edge id="EF" from="E" to="F" numLanes="2" speed="31.29" priority="3" shape="1000,-10 1060,-8 1130,-2 1200,0"/>
+    <!-- Westbound main -->
+    <edge id="FE" from="F" to="E" numLanes="2" speed="31.29" priority="3" shape="1200,0 1130,-2 1060,-8 1000,-10"/>
+    <edge id="ED" from="E" to="D" numLanes="2" speed="31.29" priority="3"/>
+    <edge id="DR" from="D" to="R" numLanes="2" speed="31.29" priority="3" shape="850,-10 800,-2 760,8 725,15"/>
+    <edge id="RC" from="R" to="C" numLanes="2" speed="31.29" priority="3" shape="725,15 700,22 650,32 600,40"/>
+    <edge id="CB" from="C" to="B" numLanes="2" speed="31.29" priority="3"/>
+    <edge id="BA" from="B" to="A" numLanes="2" speed="31.29" priority="3" shape="350,40 250,22 175,8 100,0"/>
+    <edge id="AW" from="A" to="W" numLanes="2" speed="31.29" priority="3"/>
+    <!-- On-ramp (surface → highway) -->
+    <edge id="RS_R" from="RS" to="R" numLanes="1" speed="22.35" priority="1"/>
+    <!-- Off-ramp (highway → surface) -->
+    <edge id="R_RS" from="R" to="RS" numLanes="1" speed="22.35" priority="1"/>
+</edges>

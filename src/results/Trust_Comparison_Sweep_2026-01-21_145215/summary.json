@@ -1,0 +1,151 @@
+{
+  "suite_name": "Trust_Comparison_Sweep",
+  "completed_at": "2026-01-21T15:03:15.328526",
+  "total_runs": 120,
+  "results": {
+    "baseline": {
+      "num_runs": 10,
+      "avg_global_amota_mean": 0.49754427943732465,
+      "avg_global_amota_std": 0.05543627653612114,
+      "avg_cis_amota_mean": 0.9899259244294041,
+      "avg_cis_amota_std": 0.001035799117855909,
+      "avg_cav_amota_mean": 0.9916786883091249,
+      "avg_cav_amota_std": 0.0032456683716395335,
+      "avg_perception_anomalies_mean": 0,
+      "avg_perception_anomalies_std": 0.0,
+      "total_anomaly_detections": 0
+    },
+    "baseline_notrust": {
+      "num_runs": 10,
+      "avg_global_amota_mean": 0.5154847556169108,
+      "avg_global_amota_std": 0.04739500808452684,
+      "avg_cis_amota_mean": 0.9892552583621486,
+      "avg_cis_amota_std": 0.0016725032282031986,
+      "avg_cav_amota_mean": 0.9914591873045446,
+      "avg_cav_amota_std": 0.001824362776642043,
+      "avg_perception_anomalies_mean": 0,
+      "avg_perception_anomalies_std": 0.0,
+      "total_anomaly_detections": 0
+    },
+    "extrinsics_5deg_trust": {
+      "num_runs": 10,
+      "avg_global_amota_mean": 0.5127916454813028,
+      "avg_global_amota_std": 0.040661959018345996,
+      "avg_cis_amota_mean": 0.9911280754549043,
+      "avg_cis_amota_std": 0.0006129498468352666,
+      "avg_cav_amota_mean": 0.9915594506052198,
+      "avg_cav_amota_std": 0.001531673006204489,
+      "avg_perception_anomalies_mean": 0.3,
+      "avg_perception_anomalies_std": 0.48304589153964794,
+      "total_anomaly_detections": 3
+    },
+    "extrinsics_5deg_notrust": {
+      "num_runs": 10,
+      "avg_global_amota_mean": 0.5474829776453934,
+      "avg_global_amota_std": 0.059124999855142975,
+      "avg_cis_amota_mean": 0.9907857212685813,
+      "avg_cis_amota_std": 0.001133705324333905,
+      "avg_cav_amota_mean": 0.9912760569341662,
+      "avg_cav_amota_std": 0.0021687476489435347,
+      "avg_perception_anomalies_mean": 0.6,
+      "avg_perception_anomalies_std": 0.9660917830792959,
+      "total_anomaly_detections": 6
+    },
+    "localization_50pct_trust": {
+      "num_runs": 10,
+      "avg_global_amota_mean": 0.5181070034547536,
+      "avg_global_amota_std": 0.05752360791247379,
+      "avg_cis_amota_mean": 0.9903665450466836,
+      "avg_cis_amota_std": 0.001169509664419909,
+      "avg_cav_amota_mean": 0.9915609082917256,
+      "avg_cav_amota_std": 0.002219682353527302,
+      "avg_perception_anomalies_mean": 0.3,
+      "avg_perception_anomalies_std": 0.6749485577105528,
+      "total_anomaly_detections": 3
+    },
+    "localization_50pct_notrust": {
+      "num_runs": 10,
+      "avg_global_amota_mean": 0.49265346152366585,
+      "avg_global_amota_std": 0.05161330825792068,
+      "avg_cis_amota_mean": 0.9911021251184172,
+      "avg_cis_amota_std": 0.0013159024885169308,
+      "avg_cav_amota_mean": 0.9920668307414834,
+      "avg_cav_amota_std": 0.0014709293915157698,
+      "avg_perception_anomalies_mean": 0,
+      "avg_perception_anomalies_std": 0.0,
+      "total_anomaly_detections": 0
+    },
+    "mal_remove_50pct_trust": {
+      "num_runs": 10,
+      "avg_global_amota_mean": 0.5344703346832335,
+      "avg_global_amota_std": 0.07431196563314019,
+      "avg_cis_amota_mean": 0.9904070575836169,
+      "avg_cis_amota_std": 0.0011219494808175994,
+      "avg_cav_amota_mean": 0.9911578943798557,
+      "avg_cav_amota_std": 0.0018556145073392156,
+      "avg_perception_anomalies_mean": 0.3,
+      "avg_perception_anomalies_std": 0.6749485577105528,
+      "total_anomaly_detections": 3
+    },
+    "mal_remove_50pct_notrust": {
+      "num_runs": 10,
+      "avg_global_amota_mean": 0.5006666682797083,
+      "avg_global_amota_std": 0.04484290625868295,
+      "avg_cis_amota_mean": 0.9900860567429304,
+      "avg_cis_amota_std": 0.0009502908111129909,
+      "avg_cav_amota_mean": 0.9922681497738823,
+      "avg_cav_amota_std": 0.0016077896032418786,
+      "avg_perception_anomalies_mean": 0,
+      "avg_perception_anomalies_std": 0.0,
+      "total_anomaly_detections": 0
+    },
+    "mal_add_50pct_trust": {
+      "num_runs": 10,
+      "avg_global_amota_mean": 0.5243978995726892,
+      "avg_global_amota_std": 0.03627546496321092,
+      "avg_cis_amota_mean": 0.9905945605149508,
+      "avg_cis_amota_std": 0.0011731700355397002,
+      "avg_cav_amota_mean": 0.9918736242514941,
+      "avg_cav_amota_std": 0.001453966930320678,
+      "avg_perception_anomalies_mean": 0.4,
+      "avg_perception_anomalies_std": 0.9660917830792959,
+      "total_anomaly_detections": 4
+    },
+    "mal_add_50pct_notrust": {
+      "num_runs": 10,
+      "avg_global_amota_mean": 0.528159847641396,
+      "avg_global_amota_std": 0.06889395658260372,
+      "avg_cis_amota_mean": 0.9908798062677873,
+      "avg_cis_amota_std": 0.0008898207297170097,
+      "avg_cav_amota_mean": 0.9913573809605338,
+      "avg_cav_amota_std": 0.002012388351706584,
+      "avg_perception_anomalies_mean": 0.3,
+      "avg_perception_anomalies_std": 0.6749485577105528,
+      "total_anomaly_detections": 3
+    },
+    "mal_convoy_50pct_trust": {
+      "num_runs": 10,
+      "avg_global_amota_mean": 0.5552031679839055,
+      "avg_global_amota_std": 0.05030580061540796,
+      "avg_cis_amota_mean": 0.9902523161428284,
+      "avg_cis_amota_std": 0.0011360768955454485,
+      "avg_cav_amota_mean": 0.9911630743560459,
+      "avg_cav_amota_std": 0.0015631843046266137,
+      "avg_perception_anomalies_mean": 0.6,
+      "avg_perception_anomalies_std": 0.9660917830792959,
+      "total_anomaly_detections": 6
+    },
+    "mal_convoy_50pct_notrust": {
+      "num_runs": 10,
+      "avg_global_amota_mean": 0.5417791779523494,
+      "avg_global_amota_std": 0.07581772047170293,
+      "avg_cis_amota_mean": 0.9901533290781626,
+      "avg_cis_amota_std": 0.001271785824740355,
+      "avg_cav_amota_mean": 0.9898969712788377,
+      "avg_cav_amota_std": 0.00298439456800245,
+      "avg_perception_anomalies_mean": 0.9,
+      "avg_perception_anomalies_std": 1.1005049346146119,
+      "total_anomaly_detections": 9
+    }
+  }
+}

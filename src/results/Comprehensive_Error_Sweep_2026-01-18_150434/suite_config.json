@@ -1,0 +1,36 @@
+{
+  "name": "Comprehensive_Error_Sweep",
+  "description": "Test all error types at 1-10% CAV error rates with PointPillars OS1_128",
+  "runs_per_config": 1,
+  "warmup_steps": 500,
+  "record_steps": 2000,
+  "max_steps": null,
+  "error_injection_start": 500,
+  "error_injection_end": null,
+  "baseline": {
+    "name": "baseline_no_errors",
+    "description": "PointPillars OS1_128 baseline with no injected errors"
+  },
+  "variants": [
+    {
+      "name": "extrinsics_10pct",
+      "description": "Sensor Calibration Error affecting 10% of CAVs"
+    },
+    {
+      "name": "localization_10pct",
+      "description": "Localization/GPS Drift affecting 10% of CAVs"
+    },
+    {
+      "name": "mal_remove_10pct",
+      "description": "Malicious Detection Removal affecting 10% of CAVs"
+    },
+    {
+      "name": "mal_add_10pct",
+      "description": "Malicious Fake Detection affecting 10% of CAVs"
+    },
+    {
+      "name": "mal_convoy_10pct",
+      "description": "Malicious Convoy Injection affecting 10% of CAVs"
+    }
+  ]
+}

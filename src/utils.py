@@ -46,246 +46,13 @@ def unsubscribe_from_vehicle(traci_instance, veh_id):
 # FAST ROTATED RECTANGLE IoU IMPLEMENTATION (replaces Shapely)
 # ============================================================================
 
-def get_rotated_box_corners(cx, cy, w, h, angle):
-    """
-    Get the 4 corners of a rotated bounding box.
-    
-    Args:
-        cx, cy: Center coordinates
-        w, h: Width and length (swapped from standard convention?)
-        angle: Rotation angle in radians
-    
-    Returns:
-        numpy array of shape (4, 2) containing corner coordinates
-    """
-    cos_a = np.cos(angle)
-    sin_a = np.sin(angle)
-    
-    # Half dimensions
-    # Assuming w is width (perpendicular to heading) and h is length (along heading)
-    # The matching logic passes [width, length] to this function
-    hw = w / 2.0
-    hh = h / 2.0
-    
-    # Corners relative to center (before rotation)
-    # If angle is heading (East=0), then length (h) should be along x-axis
-    # But this function treats w as x-axis dimension and h as y-axis dimension at 0 rotation?
-    # NO: Standard math box at 0 rotation has width along x and height along y.
-    # IF we want length along heading (x-axis at 0), we need to swap w and h here
-    # OR the caller must pass [length, width].
-    
-    # The caller (sensor_fusion.py) passes [width, length].
-    # So w=width, h=length.
-    # At 0 rotation (East), length should be along X.
-    # Currently: w is along X, h is along Y. This means at 0 rotation, the box is "wide" not "long".
-    # This is 90 degrees off.
-    
-    # FIX: Swap dimensions here to align length with heading (x-axis at 0)
-    # Let's map w (width) to Y-axis and h (length) to X-axis
-    
-    # Corners relative to center:
-    # x (along heading) = +/- length/2
-    # y (perpendicular) = +/- width/2
-    
-    corners_rel = np.array([
-        [-hh, -hw], # -length/2, -width/2
-        [hh, -hw],  # +length/2, -width/2
-        [hh, hw],   # +length/2, +width/2
-        [-hh, hw]   # -length/2, +width/2
-    ])
-    
-    # Rotation matrix
-    rot_matrix = np.array([
-        [cos_a, -sin_a],
-        [sin_a, cos_a]
-    ])
-    
-    # Rotate and translate corners
-    corners = corners_rel @ rot_matrix.T + np.array([cx, cy])
-    
-    return corners
+from geometry import get_rotated_box_corners
 
 
-def polygon_area_signed(vertices):
-    """
-    Calculate the signed area of a polygon using the shoelace formula.
-    Positive area = counter-clockwise winding
-    Negative area = clockwise winding
-    """
-    n = len(vertices)
-    if n < 3:
-        return 0.0
-    
-    vertices = np.asarray(vertices, dtype=np.float64)
-    x = vertices[:, 0]
-    y = vertices[:, 1]
-    
-    # Signed area (positive for CCW, negative for CW)
-    area = 0.5 * (np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1)))
-    return area
-
-
-def polygon_area(vertices):
-    """
-    Calculate the absolute area of a polygon using the shoelace formula.
-    
-    Args:
-        vertices: numpy array of shape (n, 2) containing polygon vertices
-    
-    Returns:
-        Area of the polygon (always positive)
-    """
-    return abs(polygon_area_signed(vertices))
-
-
-def ensure_ccw(vertices):
-    """
-    Ensure polygon vertices are in counter-clockwise order.
-    """
-    vertices = np.asarray(vertices, dtype=np.float64)
-    if len(vertices) < 3:
-        return vertices
-    
-    # Check winding order using signed area
-    signed_area = polygon_area_signed(vertices)
-    
-    # If clockwise (negative area), reverse the order
-    if signed_area < 0:
-        return vertices[::-1].copy()
-    return vertices
-
-
-def line_intersection(p1, p2, p3, p4):
-    """
-    Find the intersection point of two line segments.
-    
-    Args:
-        p1, p2: Endpoints of first line segment
-        p3, p4: Endpoints of second line segment
-    
-    Returns:
-        Intersection point or None if no intersection
-    """
-    x1, y1 = p1
-    x2, y2 = p2
-    x3, y3 = p3
-    x4, y4 = p4
-    
-    denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
-    
-    if abs(denom) < 1e-10:
-        return None
-    
-    t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom
-    
-    x = x1 + t * (x2 - x1)
-    y = y1 + t * (y2 - y1)
-    
-    return np.array([x, y])
-
-
-def sutherland_hodgman_clip(subject_polygon, clip_polygon):
-    """
-    Sutherland-Hodgman polygon clipping algorithm.
-    Clips the subject polygon against the clip polygon.
-    Both polygons are normalized to CCW order before clipping.
-    
-    Args:
-        subject_polygon: numpy array of shape (n, 2) - polygon to be clipped
-        clip_polygon: numpy array of shape (m, 2) - clipping polygon
-    
-    Returns:
-        numpy array of clipped polygon vertices, or empty array if no intersection
-    """
-    def inside_edge(point, edge_start, edge_end):
-        """Check if point is on the left side of the edge (inside for CCW polygon)."""
-        return (edge_end[0] - edge_start[0]) * (point[1] - edge_start[1]) - \
-               (edge_end[1] - edge_start[1]) * (point[0] - edge_start[0]) >= -1e-10
-    
-    # Ensure both polygons are CCW
-    subject = ensure_ccw(subject_polygon)
-    clip = ensure_ccw(clip_polygon)
-    
-    if len(subject) == 0 or len(clip) == 0:
-        return np.array([])
-    
-    output = list(subject)
-    
-    for i in range(len(clip)):
-        if len(output) == 0:
-            return np.array([])
-        
-        input_list = output
-        output = []
-        
-        edge_start = clip[i]
-        edge_end = clip[(i + 1) % len(clip)]
-        
-        for j in range(len(input_list)):
-            current = np.asarray(input_list[j], dtype=np.float64)
-            previous = np.asarray(input_list[j - 1], dtype=np.float64)
-            
-            current_inside = inside_edge(current, edge_start, edge_end)
-            previous_inside = inside_edge(previous, edge_start, edge_end)
-            
-            if current_inside:
-                if not previous_inside:
-                    intersection = line_intersection(previous, current, edge_start, edge_end)
-                    if intersection is not None:
-                        output.append(intersection)
-                output.append(current)
-            elif previous_inside:
-                intersection = line_intersection(previous, current, edge_start, edge_end)
-                if intersection is not None:
-                    output.append(intersection)
-    
-    if len(output) < 3:
-        return np.array([])
-    
-    return np.array(output, dtype=np.float64)
-
-
-def rotated_box_iou(box_a, box_b):
-    """
-    Calculate IoU between two rotated bounding boxes.
-    
-    Args:
-        box_a: tuple/list of (cx, cy, w, h, angle)
-        box_b: tuple/list of (cx, cy, w, h, angle)
-    
-    Returns:
-        IoU value between 0 and 1
-    """
-    try:
-        # Get corners of both boxes
-        corners_a = get_rotated_box_corners(box_a[0], box_a[1], box_a[2], box_a[3], box_a[4])
-        corners_b = get_rotated_box_corners(box_b[0], box_b[1], box_b[2], box_b[3], box_b[4])
-        
-        # Calculate areas of both boxes
-        area_a = box_a[2] * box_a[3]  # w * h
-        area_b = box_b[2] * box_b[3]
-        
-        if area_a <= 0 or area_b <= 0:
-            return 0.0
-        
-        # Find intersection polygon using Sutherland-Hodgman algorithm
-        intersection = sutherland_hodgman_clip(corners_a, corners_b)
-        
-        if len(intersection) < 3:
-            return 0.0
-        
-        # Calculate intersection area
-        intersection_area = polygon_area(intersection)
-        
-        # Calculate union area
-        union_area = area_a + area_b - intersection_area
-        
-        if union_area <= 0:
-            return 0.0
-        
-        return intersection_area / union_area
-    except Exception:
-        return 0.0
+from geometry import (
+    polygon_area_signed, polygon_area, ensure_ccw,
+    sutherland_hodgman_clip, rotated_box_iou,
+)
 
 
 def computeDistanceBBox(a, b):
@@ -306,6 +73,30 @@ def computeDistanceBBox(a, b):
         return 1.0
     else:
         return 1.0 - iou
+
+
+def inv2x2(A: np.ndarray) -> np.ndarray:
+    """Analytic inverse of 2×2 matrix or batch of 2×2 matrices.
+
+    A can be shape (2, 2) or (N, 2, 2).  ~10× faster than np.linalg.inv for 2×2
+    because it avoids LAPACK dispatch overhead.
+    """
+    if A.ndim == 2:
+        det = A[0, 0] * A[1, 1] - A[0, 1] * A[1, 0]
+        inv = np.empty((2, 2), dtype=A.dtype)
+        inv[0, 0] =  A[1, 1] / det
+        inv[0, 1] = -A[0, 1] / det
+        inv[1, 0] = -A[1, 0] / det
+        inv[1, 1] =  A[0, 0] / det
+        return inv
+    else:
+        det = A[:, 0, 0] * A[:, 1, 1] - A[:, 0, 1] * A[:, 1, 0]
+        inv = np.empty_like(A)
+        inv[:, 0, 0] =  A[:, 1, 1] / det
+        inv[:, 0, 1] = -A[:, 0, 1] / det
+        inv[:, 1, 0] = -A[:, 1, 0] / det
+        inv[:, 1, 1] =  A[:, 0, 0] / det
+        return inv
 
 
 def mahalanobis_distance(detection_pos, predicted_pos, S_inv):
@@ -354,21 +145,16 @@ def compute_innovation_covariance(P_pred, R):
         P_pos = np.eye(2)
     
     S = P_pos + R
-    
-    # Ensure S is invertible by adding small regularization if needed
-    try:
-        S_inv = np.linalg.inv(S)
-    except np.linalg.LinAlgError:
-        # Regularize if singular
-        S_inv = np.linalg.inv(S + 1e-6 * np.eye(2))
-    
+    S[0, 0] += 1e-8
+    S[1, 1] += 1e-8
+    S_inv = inv2x2(S)
     return S, S_inv
 
 
-def compute_hybrid_cost(detection_pos, detection_cov, predicted_pos, P_pred, 
-                        det_bbox, pred_bbox, 
+def compute_hybrid_cost(detection_pos, detection_cov, predicted_pos, P_pred,
+                        det_bbox, pred_bbox,
                         mahal_weight=0.5, iou_weight=0.5,
-                        mahal_gate=9.21):
+                        mahal_gate=9.21, iou_gate=0.0):
     """
     Compute hybrid cost combining Mahalanobis distance and IOU for track association.
     
@@ -407,16 +193,22 @@ def compute_hybrid_cost(detection_pos, detection_cov, predicted_pos, P_pred,
     
     # IOU (0 to 1, higher is better)
     iou = rotated_box_iou(det_bbox, pred_bbox)
-    
+
+    # IoU gate (0 = no gate, e.g. AB3DMOT uses 0.01 to drop non-overlapping
+    # candidates entirely). Useful when running pure-IoU matching with the
+    # Mahalanobis gate effectively disabled.
+    if iou_gate > 0.0 and iou < iou_gate:
+        return 1e9, mahal_dist, iou
+
     # Normalize Mahalanobis to 0-1 range using gate threshold
     mahal_normalized = mahal_dist / mahal_gate
-    
+
     # IOU cost (1 - IOU, so 0 = perfect overlap)
     iou_cost = 1.0 - iou
-    
+
     # Combined cost
     cost = mahal_weight * mahal_normalized + iou_weight * iou_cost
-    
+
     return cost, mahal_dist, iou
 
 
@@ -483,7 +275,7 @@ class VehicleProbabilityManager:
     Manages the probability of vehicles being classified as a specific type (e.g., CAV).
     """
 
-    def __init__(self, probability, type, sumo_type, sensor_packages=None, error_package=None):
+    def __init__(self, probability, type, sumo_type, sensor_packages=None, error_package=None, lifecycle_mode="log_odds"):
         """
         Initializes the VehicleProbabilityManager.
 
@@ -503,6 +295,7 @@ class VehicleProbabilityManager:
         self.vehicle_instances = {}
         self.sensor_packages = sensor_packages if sensor_packages else []
         self.error_package = error_package
+        self.lifecycle_mode = lifecycle_mode
 
     def update_vehicles(self, traci_instance, vehicle_id_list):
         """
@@ -534,7 +327,8 @@ class VehicleProbabilityManager:
                         from error import ErrorPackage
                         has_error = ErrorPackage.should_cav_have_error() if self.error_package else False
                         self.vehicle_instances[vehicle_id] = sensor_package.SensorPackage(
-                            vehicle_id, sp[0], sp[1], sp[2], self.error_package, has_error=has_error)
+                            vehicle_id, sp[0], sp[1], sp[2], self.error_package, has_error=has_error,
+                            lifecycle_mode=self.lifecycle_mode)
                 except Exception as e:
                     print(f"ERROR: Couldn't add {self.type}: ", e)
 
@@ -612,7 +406,7 @@ class TrafficLightProbabilityManager:
     Manages the probability of traffic lights being outfitted with cameras.
     """
 
-    def __init__(self, probability, traci_instance, sensor_packages=None, error_package=None):
+    def __init__(self, probability, traci_instance, sensor_packages=None, error_package=None, lifecycle_mode="log_odds"):
         """
         Initializes the TrafficLightProbabilityManager.
 
@@ -628,6 +422,7 @@ class TrafficLightProbabilityManager:
         self.sensor_packages = sensor_packages if sensor_packages else []
         self.position = None
         self.error_package = error_package
+        self.lifecycle_mode = lifecycle_mode
 
         # Initialize the traffic lights once
         self.initialize_traffic_lights(traci_instance)
@@ -647,7 +442,7 @@ class TrafficLightProbabilityManager:
                     self.position = traci_instance.junction.getPosition(light.replace("GS_", "", 1))
                     if self.sensor_packages:
                         sp = self.select_sensor_package()
-                        self.tracked_tfls[light] = sensor_package.SensorPackage(light, sp[0], sp[1], sp[2], self.error_package)
+                        self.tracked_tfls[light] = sensor_package.SensorPackage(light, sp[0], sp[1], sp[2], self.error_package, lifecycle_mode=self.lifecycle_mode)
                     else:
                         self.tracked_tfls[light] = None
                     self.tracked_tfl_total += 1

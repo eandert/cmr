@@ -24,7 +24,7 @@ class Sensor:
         detection_probability_polynomial (Polynomial): Polynomial for detection probability.
     """
     
-    def __init__(self, sensor_type, detector_type, use_gpem_model=False, use_quadratic=False, detector_max_range=None):
+    def __init__(self, sensor_type, detector_type, use_gpem_model=False, use_quadratic=False, detector_max_range=None, enable_realistic_fp=False):
         """
         Initialize the sensor with its properties and error models.
         
@@ -34,6 +34,8 @@ class Sensor:
             use_gpem_model (bool): If True, use GPEM parameterized covariance. If False, use static averaged covariance.
             use_quadratic (bool): If True and use_gpem_model=True, use quadratic regression instead of linear.
             detector_max_range (float): Max detection range in meters. None uses default (60m).
+            enable_realistic_fp (bool): If True, inject Poisson-sampled false positives drawn from
+                the polar calibration bins. Default False — no change to existing behaviour.
         """
         self.sensor_type_id = sensor_type.id
         self.detector_type_id = detector_type.id
@@ -55,6 +57,10 @@ class Sensor:
             # This ensures ground truth filtering matches the detector's actual range
             self.max_range = self.error_model.max_range
         
+        self.enable_realistic_fp = enable_realistic_fp
+        self.fp_per_frame_cap = None       # set via config["fp_per_frame_cap"]
+        self.fp_score_threshold = 0.3      # only inject FPs that survive the detection threshold
+
         # Initialize sensor's original extrinsics relative to the SensorPackage
         self.x_extrinsics_original = 0.0
         self.y_extrinsics_original = 0.0
@@ -114,19 +120,19 @@ class Sensor:
         """
         return self.bounding_box_error_polynomial.evaluate(distance)
         
-    def detection_probability_at_distance(self, distance):
+    def detection_probability_at_distance(self, distance, angle_deg=None):
         """
-        Get the detection probability at a given distance.
-        
+        Get the detection probability at a given distance (and optionally angle).
+
         Args:
             distance (float): The distance to the target in meters.
-        
+            angle_deg (float, optional): Angle to target in degrees (-180 to 180) for polar lookup.
+
         Returns:
             float: The detection probability.
         """
-        # Use regression-tested error model if available
         if self.error_model:
-            return self.error_model.detection_probability(distance)
+            return self.error_model.detection_probability(distance, angle_deg)
         return self.detection_probability_polynomial.evaluate(distance)
     
     def uses_regression_error_model(self):
@@ -135,7 +141,7 @@ class Sensor:
 
 
 class DetectedObject:
-    def __init__(self, vehicle_id, vehicle_type, detected_bbox, centroid, width, length, angle, expected_error_gaussian, velocity_vector=None, error_covariance=None, width_std=0.5, length_std=0.5):
+    def __init__(self, vehicle_id, vehicle_type, detected_bbox, centroid, width, length, angle, expected_error_gaussian, velocity_vector=None, error_covariance=None, width_std=0.5, length_std=0.5, yaw_variance=None):
         self.vehicle_id = vehicle_id
         self.type = vehicle_type
         self.detected_bbox = detected_bbox
@@ -147,6 +153,7 @@ class DetectedObject:
         self.error_covariance = error_covariance
         self.width_std = width_std
         self.length_std = length_std
+        self.yaw_variance = yaw_variance  # MSE for heading (bias² + var), from GPEM
 
     @property
     def detected_bbox_corners(self):
@@ -286,8 +293,9 @@ def create_detected_bounding_boxes(sensor, actual_pose, believed_pose, ground_tr
 
         # Check if the object is within the sensor's range and field of view but not ourself (distance > 0)
         if sensor.check_in_range_and_fov(angle_to_obj, distance) and distance > 0.001:
-            # Calculate the detection probability
-            detection_probability = sensor.detection_probability_at_distance(distance)
+            # Calculate the detection probability (pass angle for polar lookup)
+            angle_to_obj_deg = math.degrees(angle_to_obj)
+            detection_probability = sensor.detection_probability_at_distance(distance, angle_to_obj_deg)
             probability = random.random()
 
             # Use this to determine if the object is detected
@@ -403,7 +411,7 @@ def create_detected_bounding_boxes(sensor, actual_pose, believed_pose, ground_tr
                     utils.rotate_point(bbox_x_min, bbox_y_max, new_centroid_x, new_centroid_y, detected_angle)
                 ]
 
-                detected_objects.append(DetectedObject(
+                tp_det = DetectedObject(
                     vehicle_id=f"{gt_obj.vehicle_id}_{detection_id}",
                     vehicle_type=gt_obj.type,
                     detected_bbox=detected_bbox,
@@ -416,9 +424,53 @@ def create_detected_bounding_boxes(sensor, actual_pose, believed_pose, ground_tr
                     error_covariance=expected_error_gaussian.covariance,
                     width_std=width_std,
                     length_std=length_std
-                ))
+                )
+                tp_det.p_tp = 0.9
+                detected_objects.append(tp_det)
 
                 detection_id += 1
+
+    # Inject realistic false positives (off by default; enable via sensor.enable_realistic_fp)
+    if sensor.enable_realistic_fp and sensor.error_model is not None:
+        for fp in sensor.error_model.sample_false_positives(
+            believed_x, believed_y, believed_yaw,
+            max_fp_per_frame=sensor.fp_per_frame_cap,
+            score_threshold=sensor.fp_score_threshold,
+        ):
+            gx, gy = fp["x"], fp["y"]
+            w, l   = fp["width"], fp["length"]
+            angle  = fp["angle_rad"]  # global angle sensor→fp, used as heading prior
+
+            half_w = w / 2
+            half_l = l / 2
+            detected_bbox = [
+                utils.rotate_point(gx - half_l, gy - half_w, gx, gy, angle),
+                utils.rotate_point(gx + half_l, gy - half_w, gx, gy, angle),
+                utils.rotate_point(gx + half_l, gy + half_w, gx, gy, angle),
+                utils.rotate_point(gx - half_l, gy + half_w, gx, gy, angle),
+            ]
+
+            # Position covariance: distal axis along sensor→fp ray
+            fp_cov = gaussians.BivariateGaussian(0.5**2, 0.3**2, angle)
+
+            det_obj = DetectedObject(
+                vehicle_id=f"fp_{detection_id}",
+                vehicle_type=fp["class_label"],
+                detected_bbox=detected_bbox,
+                centroid=(gx, gy),
+                width=w,
+                length=l,
+                angle=angle,
+                expected_error_gaussian=fp_cov,
+                velocity_vector=(0.0, 0.0),
+                error_covariance=fp_cov.covariance,
+                width_std=0.5,
+                length_std=0.5,
+            )
+            det_obj.det_score = fp["score"]
+            det_obj.p_tp = fp["p_tp"]  # Bayesian P(TP|score,range,angle) from calibration
+            detected_objects.append(det_obj)
+            detection_id += 1
 
     return detected_objects, detected_ground_truths
 

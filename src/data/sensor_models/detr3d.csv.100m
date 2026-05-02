@@ -1,0 +1,16 @@
+# DETR3D (camera only) 100m - from mmdetection3d
+# Linear model: abs_error = intercept + slope * distance
+# Quadratic model: abs_error = quad_a * d^2 + quad_b * d + quad_c
+# Bias linear: signed_bias = bias_intercept + bias_slope * distance
+# Bias quadratic: signed_bias = bias_quad_a * d^2 + bias_quad_b * d + bias_quad_c
+# For covariance: std = 1.253 * abs_error (half-normal to std conversion)
+
+error_type,intercept,slope,quad_a,quad_b,quad_c,bias_intercept,bias_slope,bias_quad_a,bias_quad_b,bias_quad_c,unit,notes
+radial,0.261504,0.002882,5.073687e-06,0.002556584,0.2653377,-0.104988,0.00248,-0.000115959,0.009914983,-0.1925969,meters,Range error
+lateral,0.126812,0.00196,-8.151351e-06,0.002482598,0.1206535,-0.004495,-7.2e-05,-1.311568e-05,0.0007689456,-0.01440418,meters,Cross-range error
+vertical,0.051332,0.000913,1.03716e-05,0.0002477162,0.0591675,0.026147,-0.000978,6.343444e-06,-0.001384574,0.03093986,meters,Elevation error
+yaw,0.087612,-1.9e-05,-5.425744e-06,0.0003293686,0.08351296,-0.004214,9.7e-05,-3.618793e-06,0.0003287889,-0.006947969,radians,Heading angle
+width,0.205444,0.006395,8.937231e-05,0.0006648792,0.2729659,0.036497,0.000234,6.570235e-05,-0.003978471,0.08613563,meters,Box width
+length,0.106807,0.00111,1.245553e-05,0.0003112302,0.1162173,0.027483,0.000316,1.320493e-05,-0.0005302364,0.03745956,meters,Box length
+box_height,0.085487,0.001348,1.973083e-05,8.317153e-05,0.100394,0.021889,-0.000363,2.202828e-05,-0.001775089,0.03853129,meters,Box height
+miss_rate,0.621212,0.003393,1.053451e-05,0.002544338,0.633549,,,,,,probability,Miss rate

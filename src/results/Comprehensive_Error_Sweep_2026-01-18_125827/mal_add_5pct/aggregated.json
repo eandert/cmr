@@ -1,0 +1,10 @@
+{
+  "config_name": "mal_add_5pct",
+  "num_runs": 1,
+  "avg_global_amota_mean": 0.5974132863021756,
+  "avg_global_amota_std": 0,
+  "avg_cis_amota_mean": 0.9878205128205125,
+  "avg_cis_amota_std": 0,
+  "avg_cav_amota_mean": 0.0,
+  "avg_cav_amota_std": 0
+}

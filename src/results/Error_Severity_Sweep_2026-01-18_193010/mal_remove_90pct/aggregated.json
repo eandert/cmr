@@ -1,0 +1,13 @@
+{
+  "config_name": "mal_remove_90pct",
+  "num_runs": 10,
+  "avg_global_amota_mean": 0.5282367297508171,
+  "avg_global_amota_std": 0.049888044845021545,
+  "avg_cis_amota_mean": 0.9900529203795129,
+  "avg_cis_amota_std": 0.001013017541153789,
+  "avg_cav_amota_mean": 0.9907167479173475,
+  "avg_cav_amota_std": 0.0018519600240123524,
+  "avg_perception_anomalies_mean": 0.9,
+  "avg_perception_anomalies_std": 1.5238839267549948,
+  "total_anomaly_detections": 9
+}

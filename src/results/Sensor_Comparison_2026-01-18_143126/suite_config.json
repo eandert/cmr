@@ -1,0 +1,20 @@
+{
+  "name": "Sensor_Comparison",
+  "description": "Compare different sensor configurations",
+  "runs_per_config": 1,
+  "warmup_steps": 500,
+  "record_steps": 2000,
+  "max_steps": null,
+  "error_injection_start": null,
+  "error_injection_end": null,
+  "baseline": {
+    "name": "perfect_sensors",
+    "description": "Perfect sensors with no noise or errors"
+  },
+  "variants": [
+    {
+      "name": "normal_sensors",
+      "description": "Normal sensors with realistic noise"
+    }
+  ]
+}

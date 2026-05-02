@@ -25,10 +25,27 @@ def plot_gpem_results_simple(results_dir):
     
     with open(summary_file) as f:
         summary = json.load(f)
-    
-    # Extract data for all three model types
-    potential_av_rates = np.array([1.0, 2.5, 5.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0])
-    
+
+    # Read map name from suite_config.json if available
+    suite_config_file = results_path / "suite_config.json"
+    map_name = None
+    if suite_config_file.exists():
+        with open(suite_config_file) as f:
+            suite_config = json.load(f)
+        map_name = suite_config.get("map_name")
+    map_suffix = f" [{map_name}]" if map_name else ""
+
+    # Derive penetration rates dynamically from whatever keys are present in the summary.
+    # This handles both the old 13-value list and the new 8-value power-of-2 list.
+    import re as _re
+    _rate_pat = _re.compile(r'av_([\d.]+)pct$')
+    _seen_rates = set()
+    for k in summary.get('results', {}):
+        m = _rate_pat.search(k)
+        if m:
+            _seen_rates.add(float(m.group(1)))
+    potential_av_rates = np.array(sorted(_seen_rates)) if _seen_rates else np.array([])
+
     # Color by covariance mode, linestyle/marker by filter type
     # Colors: baseline=grey, static=red, linear=teal, quadratic=purple
     cov_colors = {
@@ -36,6 +53,7 @@ def plot_gpem_results_simple(results_dir):
         "static":   "#E74C3C",
         "linear":   "#2ECC71",
         "quadratic":"#9B59B6",
+        "polar":    "#F39C12",
     }
     # Linestyles and markers by filter type
     filter_styles = {
@@ -43,6 +61,8 @@ def plot_gpem_results_simple(results_dir):
         "ci":     ("--", "s"),   # dashed
         "akf":    ("-.", "^"),   # dash-dot
         "pf":     (":",  "D"),   # dotted, diamond
+        "bici":   ("-",  "d"),   # solid, diamond
+        "sabre":  ("--", "P"),   # dashed, plus
     }
 
     # Model configurations: (key_pattern, label, color, marker, linestyle)
@@ -53,21 +73,37 @@ def plot_gpem_results_simple(results_dir):
         ("static_cov_av_{rate:.1f}pct",       "Static",              cov_colors["static"],   filter_styles["kalman"][1], filter_styles["kalman"][0]),
         ("gpem_linear_av_{rate:.1f}pct",      "GPEM Linear",         cov_colors["linear"],   filter_styles["kalman"][1], filter_styles["kalman"][0]),
         ("gpem_quadratic_av_{rate:.1f}pct",   "GPEM Quadratic",      cov_colors["quadratic"],filter_styles["kalman"][1], filter_styles["kalman"][0]),
+        ("gpem_polar_av_{rate:.1f}pct",      "GPEM Polar",          cov_colors["polar"],   filter_styles["kalman"][1], filter_styles["kalman"][0]),
         # CI filter group
         ("ci_baseline_av_{rate:.1f}pct",      "CI + Baseline",       cov_colors["baseline"], filter_styles["ci"][1],     filter_styles["ci"][0]),
         ("ci_static_av_{rate:.1f}pct",        "CI + Static",         cov_colors["static"],   filter_styles["ci"][1],     filter_styles["ci"][0]),
         ("ci_gpem_linear_av_{rate:.1f}pct",   "CI + GPEM Linear",    cov_colors["linear"],   filter_styles["ci"][1],     filter_styles["ci"][0]),
         ("ci_gpem_quadratic_av_{rate:.1f}pct","CI + GPEM Quadratic", cov_colors["quadratic"],filter_styles["ci"][1],     filter_styles["ci"][0]),
+        ("ci_gpem_polar_av_{rate:.1f}pct",  "CI + GPEM Polar",    cov_colors["polar"],   filter_styles["ci"][1],     filter_styles["ci"][0]),
         # AKF filter group
         ("akf_baseline_av_{rate:.1f}pct",     "AKF + Baseline",      cov_colors["baseline"], filter_styles["akf"][1],    filter_styles["akf"][0]),
         ("akf_static_av_{rate:.1f}pct",       "AKF + Static",        cov_colors["static"],   filter_styles["akf"][1],    filter_styles["akf"][0]),
         ("akf_gpem_linear_av_{rate:.1f}pct",  "AKF + GPEM Linear",   cov_colors["linear"],   filter_styles["akf"][1],    filter_styles["akf"][0]),
         ("akf_gpem_quadratic_av_{rate:.1f}pct","AKF + GPEM Quadratic",cov_colors["quadratic"],filter_styles["akf"][1],   filter_styles["akf"][0]),
+        ("akf_gpem_polar_av_{rate:.1f}pct", "AKF + GPEM Polar",   cov_colors["polar"],   filter_styles["akf"][1],    filter_styles["akf"][0]),
         # PF filter group
         ("pf_baseline_av_{rate:.1f}pct",      "PF + Baseline",       cov_colors["baseline"], filter_styles["pf"][1],     filter_styles["pf"][0]),
         ("pf_static_av_{rate:.1f}pct",        "PF + Static",         cov_colors["static"],   filter_styles["pf"][1],     filter_styles["pf"][0]),
         ("pf_gpem_linear_av_{rate:.1f}pct",   "PF + GPEM Linear",    cov_colors["linear"],   filter_styles["pf"][1],     filter_styles["pf"][0]),
         ("pf_gpem_quadratic_av_{rate:.1f}pct","PF + GPEM Quadratic", cov_colors["quadratic"],filter_styles["pf"][1],     filter_styles["pf"][0]),
+        ("pf_gpem_polar_av_{rate:.1f}pct",  "PF + GPEM Polar",    cov_colors["polar"],   filter_styles["pf"][1],     filter_styles["pf"][0]),
+        # BICI filter group
+        ("bici_baseline_av_{rate:.1f}pct",    "BICI + Baseline",     cov_colors["baseline"], filter_styles["bici"][1],   filter_styles["bici"][0]),
+        ("bici_static_av_{rate:.1f}pct",      "BICI + Static",       cov_colors["static"],   filter_styles["bici"][1],   filter_styles["bici"][0]),
+        ("bici_gpem_linear_av_{rate:.1f}pct", "BICI + GPEM Linear",  cov_colors["linear"],   filter_styles["bici"][1],   filter_styles["bici"][0]),
+        ("bici_gpem_quadratic_av_{rate:.1f}pct","BICI + GPEM Quadratic",cov_colors["quadratic"],filter_styles["bici"][1], filter_styles["bici"][0]),
+        ("bici_gpem_polar_av_{rate:.1f}pct", "BICI + GPEM Polar",  cov_colors["polar"],   filter_styles["bici"][1],   filter_styles["bici"][0]),
+        # SABRE filter group
+        ("sabre_baseline_av_{rate:.1f}pct",   "SABRE + Baseline",    cov_colors["baseline"], filter_styles["sabre"][1],  filter_styles["sabre"][0]),
+        ("sabre_static_av_{rate:.1f}pct",     "SABRE + Static",      cov_colors["static"],   filter_styles["sabre"][1],  filter_styles["sabre"][0]),
+        ("sabre_gpem_linear_av_{rate:.1f}pct","SABRE + GPEM Linear", cov_colors["linear"],   filter_styles["sabre"][1],  filter_styles["sabre"][0]),
+        ("sabre_gpem_quadratic_av_{rate:.1f}pct","SABRE + GPEM Quadratic",cov_colors["quadratic"],filter_styles["sabre"][1],filter_styles["sabre"][0]),
+        ("sabre_gpem_polar_av_{rate:.1f}pct","SABRE + GPEM Polar", cov_colors["polar"],   filter_styles["sabre"][1],  filter_styles["sabre"][0]),
     ]
 
     # Fallback for old naming convention (gpem_model_av_X instead of gpem_linear_av_X)
@@ -76,45 +112,33 @@ def plot_gpem_results_simple(results_dir):
         ("gpem_model_av_{rate:.1f}pct", "GPEM Model", "#4ECDC4", "s", "-"),
     ]
 
-    # Check which model set we have
+    if len(potential_av_rates) == 0:
+        print("Error: No penetration-rate data found in summary.json")
+        return
+
+    # Check which model set we have — probe against the first available rate
     test_rate = potential_av_rates[0]
     has_new_format = f"gpem_linear_av_{test_rate:.1f}pct" in summary['results']
     has_quadratic = f"gpem_quadratic_av_{test_rate:.1f}pct" in summary['results']
+    has_polar = f"gpem_polar_av_{test_rate:.1f}pct" in summary['results']
     has_baseline = f"baseline_av_{test_rate:.1f}pct" in summary['results']
     has_ci = f"ci_gpem_linear_av_{test_rate:.1f}pct" in summary['results']
     has_akf = f"akf_gpem_linear_av_{test_rate:.1f}pct" in summary['results']
     has_pf = f"pf_gpem_linear_av_{test_rate:.1f}pct" in summary['results']
+    has_bici = f"bici_gpem_linear_av_{test_rate:.1f}pct" in summary['results']
+    has_sabre = f"sabre_gpem_linear_av_{test_rate:.1f}pct" in summary['results']
 
     if not has_new_format:
         models = legacy_models
         print("Note: Using legacy 2-model format (static vs gpem)")
     else:
+        # Build active model list by checking what's in the results
+        # Rather than hard-coded indices, filter by key presence
         active_models = []
-        # Kalman: baseline, static, linear, quadratic
-        if has_baseline:
-            active_models.append(models[0])
-        active_models.append(models[1])  # Static
-        active_models.append(models[2])  # Linear
-        if has_quadratic:
-            active_models.append(models[3])
-        # CI: baseline, static, linear, quadratic
-        if has_ci:
-            active_models.append(models[4])   # CI + Baseline
-            active_models.append(models[5])   # CI + Static
-            active_models.append(models[6])   # CI + GPEM Linear
-            active_models.append(models[7])   # CI + GPEM Quadratic
-        # AKF: baseline, static, linear, quadratic
-        if has_akf:
-            active_models.append(models[8])   # AKF + Baseline
-            active_models.append(models[9])   # AKF + Static
-            active_models.append(models[10])  # AKF + GPEM Linear
-            active_models.append(models[11])  # AKF + GPEM Quadratic
-        # PF: baseline, static, linear, quadratic
-        if has_pf:
-            active_models.append(models[12])  # PF + Baseline
-            active_models.append(models[13])  # PF + Static
-            active_models.append(models[14])  # PF + GPEM Linear
-            active_models.append(models[15])  # PF + GPEM Quadratic
+        for m in models:
+            key = m[0].format(rate=test_rate)
+            if key in summary['results']:
+                active_models.append(m)
         models = active_models
     
     # Collect data for each model
@@ -179,6 +203,10 @@ def plot_gpem_results_simple(results_dir):
             return "AKF + Baseline"
         elif label.startswith("PF + "):
             return "PF + Baseline"
+        elif label.startswith("BICI + "):
+            return "BICI + Baseline"
+        elif label.startswith("SABRE + "):
+            return "SABRE + Baseline"
         else:
             return "Baseline"
 
@@ -188,6 +216,8 @@ def plot_gpem_results_simple(results_dir):
         "CI":     {"prefix": "CI + ", "models": []},
         "AKF":    {"prefix": "AKF + ", "models": []},
         "PF":     {"prefix": "PF + ", "models": []},
+        "BICI":   {"prefix": "BICI + ", "models": []},
+        "SABRE":  {"prefix": "SABRE + ", "models": []},
     }
     for m in models:
         label = m[1]
@@ -197,6 +227,10 @@ def plot_gpem_results_simple(results_dir):
             filter_groups["AKF"]["models"].append(m)
         elif label.startswith("PF + "):
             filter_groups["PF"]["models"].append(m)
+        elif label.startswith("BICI + "):
+            filter_groups["BICI"]["models"].append(m)
+        elif label.startswith("SABRE + "):
+            filter_groups["SABRE"]["models"].append(m)
         else:
             filter_groups["Kalman"]["models"].append(m)
 
@@ -221,7 +255,7 @@ def plot_gpem_results_simple(results_dir):
         group_models = group["models"]
         for metric_key, ylabel, higher_is_better in all_metrics:
             fig_h, axes_h = plt.subplots(1, 2, figsize=(14, 5))
-            fig_h.suptitle(f'{filter_name} Filter: {ylabel} vs AV Penetration Rate',
+            fig_h.suptitle(f'{filter_name} Filter: {ylabel} vs AV Penetration Rate{map_suffix}',
                            fontsize=14, fontweight='bold')
 
             # Left: comparison with confidence bands
@@ -302,12 +336,16 @@ def plot_gpem_results_simple(results_dir):
         "CI":     "#E74C3C",
         "AKF":    "#2ECC71",
         "PF":     "#F39C12",
+        "BICI":   "#9B59B6",
+        "SABRE":  "#1ABC9C",
     }
     filter_marker_map = {
         "Kalman": "o",
         "CI":     "s",
         "AKF":    "^",
         "PF":     "D",
+        "BICI":   "d",
+        "SABRE":  "P",
     }
     combined_variants = {
         "gpem_linear": {
@@ -315,6 +353,8 @@ def plot_gpem_results_simple(results_dir):
             "CI":     "CI + GPEM Linear",
             "AKF":    "AKF + GPEM Linear",
             "PF":     "PF + GPEM Linear",
+            "BICI":   "BICI + GPEM Linear",
+            "SABRE":  "SABRE + GPEM Linear",
         },
     }
     # Map filter name to its baseline label for improvement calculation
@@ -323,6 +363,8 @@ def plot_gpem_results_simple(results_dir):
         "CI":     "CI + Baseline",
         "AKF":    "AKF + Baseline",
         "PF":     "PF + Baseline",
+        "BICI":   "BICI + Baseline",
+        "SABRE":  "SABRE + Baseline",
     }
 
     for cov_label, filter_map in combined_variants.items():
@@ -333,7 +375,7 @@ def plot_gpem_results_simple(results_dir):
                 continue
 
             fig_c, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(14, 5))
-            fig_c.suptitle(f'{ylabel} Across Filters ({cov_label.replace("_", " ").title()})',
+            fig_c.suptitle(f'{ylabel} Across Filters ({cov_label.replace("_", " ").title()}){map_suffix}',
                            fontsize=14, fontweight='bold')
 
             # Left: absolute values
@@ -356,38 +398,42 @@ def plot_gpem_results_simple(results_dir):
             if metric_key in ("hota", "deta", "assa"):
                 ax_left.set_ylim(0, 1.05)
 
-            # Right: improvement vs each filter's own baseline
-            for filter_name, lbl in available:
-                bl_lbl = filter_baseline_labels.get(filter_name)
-                if not bl_lbl or bl_lbl not in model_data or len(model_data[bl_lbl]["rates"]) == 0:
-                    continue
-                data = model_data[lbl]
-                means = data[f"{metric_key}_means"]
-                stds = data[f"{metric_key}_stds"]
-                ref_means = model_data[bl_lbl][f"{metric_key}_means"]
-                ref_stds = model_data[bl_lbl][f"{metric_key}_stds"]
-                if len(means) != len(ref_means) or len(means) == 0:
-                    continue
-                if higher_is_better:
-                    imp = (means - ref_means) / np.maximum(np.abs(ref_means), 1e-9) * 100
-                else:
-                    imp = (ref_means - means) / np.maximum(np.abs(ref_means), 1e-9) * 100
-                imp_stds = np.sqrt(
-                    (stds / np.maximum(np.abs(ref_means), 1e-9))**2 +
-                    (means * ref_stds / np.maximum(ref_means**2, 1e-9))**2
-                ) * 100
-                color = filter_color_map[filter_name]
-                marker = filter_marker_map[filter_name]
-                ax_right.plot(data["rates"], imp, marker=marker, linestyle='-', label=filter_name,
-                              linewidth=2.5, markersize=8, color=color)
-                ax_right.fill_between(data["rates"], imp - imp_stds, imp + imp_stds,
-                                      alpha=0.15, color=color)
+            # Right: improvement vs Kalman (EKF) with same covariance mode
+            # e.g., CI + GPEM Linear vs Kalman GPEM Linear
+            kalman_lbl = filter_map.get("Kalman")
+            if kalman_lbl and kalman_lbl in model_data and len(model_data[kalman_lbl]["rates"]) > 0:
+                ref_means = model_data[kalman_lbl][f"{metric_key}_means"]
+                ref_stds = model_data[kalman_lbl][f"{metric_key}_stds"]
+
+                for filter_name, lbl in available:
+                    if filter_name == "Kalman":
+                        continue  # skip self-comparison
+                    data = model_data[lbl]
+                    means = data[f"{metric_key}_means"]
+                    stds = data[f"{metric_key}_stds"]
+                    if len(means) != len(ref_means) or len(means) == 0:
+                        continue
+                    if higher_is_better:
+                        imp = (means - ref_means) / np.maximum(np.abs(ref_means), 1e-9) * 100
+                    else:
+                        imp = (ref_means - means) / np.maximum(np.abs(ref_means), 1e-9) * 100
+                    imp_stds = np.sqrt(
+                        (stds / np.maximum(np.abs(ref_means), 1e-9))**2 +
+                        (means * ref_stds / np.maximum(ref_means**2, 1e-9))**2
+                    ) * 100
+                    color = filter_color_map[filter_name]
+                    marker = filter_marker_map[filter_name]
+                    ax_right.plot(data["rates"], imp, marker=marker, linestyle='-', label=filter_name,
+                                  linewidth=2.5, markersize=8, color=color)
+                    ax_right.fill_between(data["rates"], imp - imp_stds, imp + imp_stds,
+                                          alpha=0.15, color=color)
 
             ax_right.axhline(y=0, color='black', linestyle='--', linewidth=1, alpha=0.5)
             ax_right.set_xlabel('AV Injection Rate (%)', fontweight='bold', fontsize=11)
             ax_right.set_ylabel('Improvement (%)', fontweight='bold', fontsize=11)
+            cov_display = cov_label.replace("_", " ").title()
             imp_note = "(positive = better)" if higher_is_better else "(positive = closer to GT)"
-            ax_right.set_title(f'{ylabel} Improvement vs Baseline {imp_note}',
+            ax_right.set_title(f'{ylabel} Improvement vs EKF {cov_display} {imp_note}',
                                fontweight='bold', fontsize=12)
             ax_right.legend(fontsize=10, loc='best')
             ax_right.grid(True, alpha=0.3)

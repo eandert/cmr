@@ -32,8 +32,8 @@ class AdaptiveKalman(ResizableKalman):
     """
 
     # --- tunables ---
-    WINDOW_SIZE = 20          # number of recent innovations to keep
-    ADAPT_ALPHA = 0.15        # exponential smoothing for sigma_a updates
+    WINDOW_SIZE = 10          # Optimal from adaptation sweep (α=0.3, w=10)
+    ADAPT_ALPHA = 0.3         # Optimal from adaptation sweep (α=0.3, w=10)
     SIGMA_A_MIN = 0.2         # lower bound on sigma_a (m/s^2)
     SIGMA_A_MAX = 15.0        # upper bound on sigma_a (m/s^2)
     WARMUP_STEPS = 5          # use default sigma_a until this many updates
@@ -46,6 +46,10 @@ class AdaptiveKalman(ResizableKalman):
                          initial_length=initial_length,
                          use_trust_scoring=use_trust_scoring,
                          passthrough_covariance=passthrough_covariance)
+
+        # Override sigma_a with AKF-specific value (starting point for adaptation)
+        from filters.filter_config import get_sigma_a
+        self.sigma_a = get_sigma_a("akf")
 
         # Innovation history (each entry: (nu, S) where nu is innovation vector, S is predicted cov)
         self._innovation_window = deque(maxlen=self.WINDOW_SIZE)
@@ -168,21 +172,26 @@ class AdaptiveKalman(ResizableKalman):
         NIS is larger, we increase sigma_a (filter is too confident).
         """
         dim_z = self._innovation_window[0][0].shape[0]
-        nis_values = []
 
-        for nu, S in self._innovation_window:
-            try:
-                S_inv = np.linalg.inv(S + 1e-10 * np.eye(S.shape[0]))
-                nis = float(nu.T @ S_inv @ nu)
-                if not (np.isnan(nis) or np.isinf(nis)):
-                    nis_values.append(nis)
-            except np.linalg.LinAlgError:
-                continue
+        # Batch NIS computation: stack innovations and covariances
+        nu_list = [nu for nu, S in self._innovation_window]
+        S_list = [S for nu, S in self._innovation_window]
+        nu_stack = np.array(nu_list)  # (W, dim_z)
+        S_stack = np.array(S_list) + 1e-10 * np.eye(dim_z)  # (W, dim_z, dim_z)
+        try:
+            S_inv_stack = np.linalg.inv(S_stack)  # (W, dim_z, dim_z)
+            # NIS = nu^T @ S_inv @ nu for each window entry
+            nis_all = np.einsum('wi,wij,wj->w', nu_stack, S_inv_stack, nu_stack)
+            # Filter invalid values
+            valid_mask = np.isfinite(nis_all)
+            nis_values = nis_all[valid_mask]
+        except np.linalg.LinAlgError:
+            nis_values = np.array([])
 
         if len(nis_values) < 3:
             return
 
-        avg_nis = np.mean(nis_values)
+        avg_nis = float(np.mean(nis_values))
         # Ratio: >1 means filter is overconfident, <1 means underconfident
         ratio = avg_nis / dim_z
 
@@ -256,15 +265,13 @@ class AdaptiveKalman(ResizableKalman):
         positions = [mu[:2] for mu in valid_measurements]
         pos_covs = [cov[:2, :2] if cov.shape[0] >= 2 else cov for cov in valid_covariances]
 
-        precision_sum = np.zeros((2, 2))
-        weighted_sum = np.zeros(2)
-        for pc, pos in zip(pos_covs, positions):
-            try:
-                prec = np.linalg.inv(pc)
-            except np.linalg.LinAlgError:
-                prec = np.linalg.inv(pc + 0.01 * np.eye(2))
-            precision_sum += prec
-            weighted_sum += prec @ pos
+        # Batch precision-weighted fusion
+        cov_stack = np.array(pos_covs)  # (N, 2, 2)
+        pos_stack = np.array(positions)  # (N, 2)
+        cov_stack += 1e-8 * np.eye(2)
+        prec_stack = np.linalg.inv(cov_stack)  # (N, 2, 2) batch inverse
+        precision_sum = prec_stack.sum(axis=0)  # (2, 2)
+        weighted_sum = np.einsum('nij,nj->i', prec_stack, pos_stack)  # (2,)
 
         try:
             fused_cov = np.linalg.inv(precision_sum)

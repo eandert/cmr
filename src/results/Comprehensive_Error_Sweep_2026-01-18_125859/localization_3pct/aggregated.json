@@ -1,0 +1,10 @@
+{
+  "config_name": "localization_3pct",
+  "num_runs": 1,
+  "avg_global_amota_mean": 0.6873488804339873,
+  "avg_global_amota_std": 0,
+  "avg_cis_amota_mean": 0.9883333333333333,
+  "avg_cis_amota_std": 0,
+  "avg_cav_amota_mean": 0.9894495412844037,
+  "avg_cav_amota_std": 0
+}

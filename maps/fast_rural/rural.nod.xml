@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nodes>
+    <!-- Two 4-way stop intersections connected by 500m road -->
+    <!-- Western intersection -->
+    <node id="W" x="-500" y="0"/>
+    <node id="C1" x="0" y="0" type="allway_stop"/>
+    <node id="N1" x="-30" y="500"/>
+    <node id="S1" x="0" y="-500"/>
+    <!-- Eastern intersection -->
+    <node id="C2" x="500" y="0" type="allway_stop"/>
+    <node id="E" x="1000" y="0"/>
+    <node id="N2" x="500" y="500"/>
+    <node id="S2" x="530" y="-500"/>
+</nodes>

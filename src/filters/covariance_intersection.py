@@ -61,7 +61,7 @@ or SensorFusion.
 import math
 import numpy as np
 from typing import Dict, Optional, Tuple, List
-from scipy.optimize import minimize_scalar
+from scipy.optimize import minimize_scalar, minimize as scipy_minimize
 
 import utils
 from filters.base import FilterBase
@@ -81,56 +81,32 @@ def _ci_fuse(xa: np.ndarray, Pa: np.ndarray,
     """
     Fuse two estimates using Covariance Intersection (CI).
 
-    This is the core CI algorithm. Given two state estimates with their
-    covariances, it finds the optimal ω that minimizes the fused covariance
-    and returns the fused estimate.
+    Given two state estimates with their covariances, finds the optimal ω
+    that minimizes the fused covariance and returns the fused estimate.
 
     Args:
-        xa: State vector a, shape (n,) or (n,1). E.g. predicted position [x, y].
-        Pa: Covariance of estimate a, shape (n, n). Must be symmetric positive definite.
-        xb: State vector b, shape (n,) or (n,1). E.g. measurement [x, y].
-        Pb: Covariance of estimate b, shape (n, n). Must be symmetric positive definite.
-        minimize: Optimization criterion.
-            'trace' — minimize trace(P_fused), equivalent to minimizing total variance.
-                      This is the most common choice and has good numerical properties.
-            'det'   — minimize det(P_fused), equivalent to minimizing the volume of
-                      the uncertainty ellipsoid. Can be better for anisotropic covariances.
+        xa: State vector a, shape (n,) or (n,1).
+        Pa: Covariance of estimate a, shape (n, n). Must be symmetric PD.
+        xb: State vector b, shape (n,) or (n,1).
+        Pb: Covariance of estimate b, shape (n, n). Must be symmetric PD.
+        minimize: 'trace' or 'det'.
 
     Returns:
         x_fused: Fused state vector, shape (n,)
         P_fused: Fused covariance, shape (n, n). Guaranteed PSD and consistent.
         omega:   Optimal weight ω ∈ [0, 1].
-                 ω → 1 means estimate a (prediction) is trusted more.
-                 ω → 0 means estimate b (measurement) is trusted more.
-
-    Mathematical guarantee:
-        For ANY true cross-correlation ρ between a and b:
-            E[(x_true - x_fused)(x_true - x_fused)^T] ≤ P_fused  (in PSD sense)
-
-    Notes:
-        - If Pa is much smaller than Pb, omega → 1 (trust prediction)
-        - If Pb is much smaller than Pa, omega → 0 (trust measurement)
-        - If Pa ≈ Pb, omega ≈ 0.5 (equal trust)
-        - scipy.optimize.minimize_scalar with 'bounded' method uses Brent's algorithm,
-          which converges superlinearly and typically needs 5-15 function evaluations
+                 ω → 1 means estimate a is trusted more.
+                 ω → 0 means estimate b is trusted more.
     """
-    # Flatten to 1D for consistent math
     xa = np.asarray(xa, dtype=float).ravel()
     xb = np.asarray(xb, dtype=float).ravel()
     Pa = np.asarray(Pa, dtype=float)
     Pb = np.asarray(Pb, dtype=float)
 
-    # Pre-compute inverses once (used in both objective and final fusion)
-    # These must succeed — if Pa or Pb is singular, the input is invalid
     Pa_inv = np.linalg.inv(Pa)
     Pb_inv = np.linalg.inv(Pb)
 
     def objective(omega):
-        """
-        Compute trace or determinant of P_fused as a function of omega.
-        This function is CONVEX on [0, 1] for both trace and det criteria
-        (proven in [1]), so Brent's method will find the global minimum.
-        """
         P_fused_inv = omega * Pa_inv + (1.0 - omega) * Pb_inv
         P_fused = np.linalg.inv(P_fused_inv)
         if minimize == 'trace':
@@ -138,15 +114,69 @@ def _ci_fuse(xa: np.ndarray, Pa: np.ndarray,
         else:
             return np.linalg.det(P_fused)
 
-    # Find optimal omega using bounded scalar optimization (Brent's method)
-    # bounds=[0, 1] because omega is the convex combination weight
     result = minimize_scalar(objective, bounds=(0.0, 1.0), method='bounded')
     omega = result.x
 
-    # Compute the fused estimate at the optimal omega
     P_fused_inv = omega * Pa_inv + (1.0 - omega) * Pb_inv
     P_fused = np.linalg.inv(P_fused_inv)
     x_fused = P_fused @ (omega * Pa_inv @ xa + (1.0 - omega) * Pb_inv @ xb)
+
+    return x_fused, P_fused, omega
+
+
+def _ici_fuse(xa: np.ndarray, Pa: np.ndarray,
+              xb: np.ndarray, Pb: np.ndarray,
+              minimize: str = 'trace') -> Tuple[np.ndarray, np.ndarray, float]:
+    """
+    Fuse two estimates using Inverse Covariance Intersection (ICI).
+
+    ICI is less conservative than standard CI — it subtracts the maximum
+    possible common information, producing tighter bounds.
+
+    CI:  P⁻¹ = ω·Pa⁻¹ + (1-ω)·Pb⁻¹
+    ICI: P⁻¹ = Pa⁻¹ + Pb⁻¹ - (ω·Pa + (1-ω)·Pb)⁻¹
+
+    Reference: Noack et al., "Inverse Covariance Intersection", Fusion 2017
+
+    Falls back to standard CI if ICI produces non-PSD result.
+    """
+    xa = np.asarray(xa, dtype=float).ravel()
+    xb = np.asarray(xb, dtype=float).ravel()
+    Pa = np.asarray(Pa, dtype=float)
+    Pb = np.asarray(Pb, dtype=float)
+
+    Pa_inv = np.linalg.inv(Pa)
+    Pb_inv = np.linalg.inv(Pb)
+
+    def objective(omega):
+        try:
+            common_info = np.linalg.inv(omega * Pa + (1.0 - omega) * Pb)
+            P_fused_inv = Pa_inv + Pb_inv - common_info
+            P_fused = np.linalg.inv(P_fused_inv)
+            if np.any(np.linalg.eigvalsh(P_fused) < -1e-10):
+                return 1e10
+            return np.trace(P_fused) if minimize == 'trace' else np.linalg.det(P_fused)
+        except np.linalg.LinAlgError:
+            return 1e10
+
+    result = minimize_scalar(objective, bounds=(0.001, 0.999), method='bounded')
+    omega = result.x
+
+    try:
+        common_info = np.linalg.inv(omega * Pa + (1.0 - omega) * Pb)
+        P_fused_inv = Pa_inv + Pb_inv - common_info
+        P_fused = np.linalg.inv(P_fused_inv)
+        if np.any(np.linalg.eigvalsh(P_fused) < -1e-10):
+            raise np.linalg.LinAlgError("Non-PSD")
+        # ICI fusion gains
+        K = P_fused @ (Pa_inv - omega * common_info)
+        L = P_fused @ (Pb_inv - (1.0 - omega) * common_info)
+        x_fused = K @ xa + L @ xb
+    except np.linalg.LinAlgError:
+        # Fallback to standard CI
+        P_fused_inv = omega * Pa_inv + (1.0 - omega) * Pb_inv
+        P_fused = np.linalg.inv(P_fused_inv)
+        x_fused = P_fused @ (omega * Pa_inv @ xa + (1.0 - omega) * Pb_inv @ xb)
 
     return x_fused, P_fused, omega
 
@@ -189,6 +219,100 @@ def _ci_fuse_multi(estimates: List[Tuple[np.ndarray, np.ndarray]],
         x_acc, P_acc, _ = _ci_fuse(x_acc, P_acc, x_i.ravel(), P_i, minimize)
 
     return x_acc, P_acc
+
+
+def _bici_fuse_multi(estimates: List[Tuple[np.ndarray, np.ndarray]],
+                     minimize: str = 'trace') -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Batch Inverse Covariance Intersection (BICI) — N-way simultaneous fusion.
+
+    Optimizes N weights ω₁..ωₙ (Σωᵢ=1, ωᵢ≥0) simultaneously to minimize
+    trace(P_fused), fusing all estimates in a single batch operation.
+
+    N-way ICI formula (Ajgl & Straka, FUSION 2020):
+      P_fused⁻¹ = Σᵢ Pᵢ⁻¹ - (Σᵢ ωᵢ·Pᵢ)⁻¹
+
+    This is less conservative than sequential pairwise CI because it:
+    1. Optimizes all weights jointly (not greedily pairwise)
+    2. Uses ICI (subtracts common info) rather than CI
+    3. Is order-independent
+
+    For N=1: returns estimate directly.
+    For N=2: delegates to _ici_fuse (equivalent, slightly faster).
+    Falls back to _ci_fuse_multi if BICI produces non-PSD result.
+
+    Reference: Liu, Deng & Hu, "Multi-Sensor Fusion Positioning Based on
+    Batch Inverse Covariance Intersection and IMM", Applied Sciences 2021.
+    """
+    if len(estimates) == 0:
+        raise ValueError("No estimates to fuse")
+    if len(estimates) == 1:
+        return estimates[0][0].ravel(), estimates[0][1]
+
+    # N=2: use existing ICI (equivalent, avoids N-dim optimization overhead)
+    if len(estimates) == 2:
+        x_f, P_f, _ = _ici_fuse(estimates[0][0], estimates[0][1],
+                                  estimates[1][0], estimates[1][1], minimize)
+        return x_f, P_f
+
+    N = len(estimates)
+    xs = [np.asarray(x, dtype=float).ravel() for x, _ in estimates]
+    Ps = [np.asarray(P, dtype=float) for _, P in estimates]
+    P_invs = [np.linalg.inv(P) for P in Ps]
+    sum_P_invs = sum(P_invs)
+
+    def objective(omegas_free):
+        # Map N-1 free params to N simplex weights (last weight = 1 - sum)
+        omega_last = 1.0 - np.sum(omegas_free)
+        if omega_last < 0:
+            return 1e12
+        omegas = np.append(omegas_free, omega_last)
+        if np.any(omegas < -1e-10):
+            return 1e12
+        try:
+            # Common information: (Σᵢ ωᵢ·Pᵢ)⁻¹
+            P_weighted = sum(w * P for w, P in zip(omegas, Ps))
+            common_info = np.linalg.inv(P_weighted)
+            # BICI: P_fused⁻¹ = Σᵢ Pᵢ⁻¹ - common_info
+            P_fused_inv = sum_P_invs - common_info
+            P_fused = np.linalg.inv(P_fused_inv)
+            if np.any(np.linalg.eigvalsh(P_fused) < -1e-10):
+                return 1e12
+            return np.trace(P_fused) if minimize == 'trace' else np.linalg.det(P_fused)
+        except np.linalg.LinAlgError:
+            return 1e12
+
+    # Initial guess: equal weights
+    w0 = np.full(N - 1, 1.0 / N)
+    # Bounds: each free weight in [0.001, 0.999]
+    bounds = [(0.001, 0.999)] * (N - 1)
+
+    result = scipy_minimize(objective, w0, method='L-BFGS-B', bounds=bounds,
+                            options={'maxiter': 50, 'ftol': 1e-8})
+    omegas_free = result.x
+    omega_last = 1.0 - np.sum(omegas_free)
+    omegas = np.append(omegas_free, max(omega_last, 0.001))
+    omegas = omegas / omegas.sum()  # Re-normalize
+
+    try:
+        P_weighted = sum(w * P for w, P in zip(omegas, Ps))
+        common_info = np.linalg.inv(P_weighted)
+        P_fused_inv = sum_P_invs - common_info
+        P_fused = np.linalg.inv(P_fused_inv)
+        if np.any(np.linalg.eigvalsh(P_fused) < -1e-10):
+            raise np.linalg.LinAlgError("Non-PSD")
+
+        # Compute fused state using BICI gains (vectorized)
+        # Kᵢ = P_fused · (Pᵢ⁻¹ - ωᵢ · common_info)
+        P_inv_stack = np.array(P_invs)  # (N, d, d)
+        xs_stack = np.array(xs)  # (N, d)
+        K_terms = P_fused @ (P_inv_stack - omegas[:, np.newaxis, np.newaxis] * common_info)  # (N, d, d)
+        x_fused = np.einsum('nij,nj->i', K_terms, xs_stack)
+
+        return x_fused, P_fused
+    except np.linalg.LinAlgError:
+        # Fallback to sequential pairwise CI
+        return _ci_fuse_multi(estimates, minimize)
 
 
 # =============================================================================
@@ -354,7 +478,8 @@ class CovarianceIntersectionFilter(FilterBase):
         # trust. With Kalman, bad Q leads to either overconfidence or jitter;
         # with CI, Q mainly affects prediction covariance magnitude, and omega
         # compensates for the rest.
-        self.sigma_a = 2.0  # m/s² — acceleration noise standard deviation
+        from filters.filter_config import get_sigma_a
+        self.sigma_a = get_sigma_a("ci")
 
         # Mode-specific initial covariance for non-position states
         if self.fusion_mode == 0:
@@ -612,7 +737,7 @@ class CovarianceIntersectionFilter(FilterBase):
                     cov_3x3[0:2, 0:2] = match_cov[0:2, 0:2]
                 else:
                     cov_3x3[0:2, 0:2] = np.eye(2, dtype='float') * 0.25  # Fallback
-                cov_3x3[2, 2] = 0.1  # ~18° std heading measurement noise
+                cov_3x3[2, 2] = match.yaw_variance if match.yaw_variance is not None else 0.1
                 self.localTrackersCovarianceList.append(cov_3x3)
             else:
                 # CV/CA: measurement is [x, y]
@@ -646,17 +771,37 @@ class CovarianceIntersectionFilter(FilterBase):
         if len(self.localTrackersCovarianceList) == 1:
             return self.localTrackersMeasurementList[0], self.localTrackersCovarianceList[0]
 
-        precision_sum = np.zeros((2, 2))
-        weighted_pos = np.zeros(2)
-        for meas, cov in zip(self.localTrackersMeasurementList,
-                             self.localTrackersCovarianceList):
-            P_inv = np.linalg.inv(cov[:2, :2])
-            precision_sum += P_inv
-            weighted_pos += P_inv @ meas[:2]
+        # Batch precision-weighted fusion
+        cov_stack = np.array([c[:2, :2] for c in self.localTrackersCovarianceList]) + 1e-8 * np.eye(2)
+        pos_stack = np.array([m[:2] for m in self.localTrackersMeasurementList])
+        prec_stack = np.linalg.inv(cov_stack)  # (N, 2, 2) batch inverse
+        precision_sum = prec_stack.sum(axis=0)
+        weighted_pos = np.einsum('nij,nj->i', prec_stack, pos_stack)
 
         fused_cov = np.linalg.inv(precision_sum)
         fused_pos = fused_cov @ weighted_pos
         return fused_pos, fused_cov
+
+    # =========================================================================
+    # =========================================================================
+    # MULTI-MEASUREMENT FUSION (overridable by subclasses e.g. BICI)
+    # =========================================================================
+
+    def _fuse_measurements(self, meas_estimates, source_ids=None):
+        """
+        Fuse multiple measurement estimates into one combined estimate.
+
+        Default: sequential pairwise CI. Override in subclasses for batch
+        fusion (e.g. BICI uses N-way simultaneous ICI, SABRE uses
+        reliability-informed initialization).
+
+        Args:
+            meas_estimates: List of (x, P) tuples.
+            source_ids: Optional list of participant IDs (used by SABRE).
+        """
+        if len(meas_estimates) == 1:
+            return meas_estimates[0]
+        return _ci_fuse_multi(meas_estimates)
 
     # =========================================================================
     # MAIN FUSION (called once per frame per tracked object)
@@ -743,6 +888,7 @@ class CovarianceIntersectionFilter(FilterBase):
             # Filter out NaN/Inf, apply trust scoring, add minimum covariance floor
             valid_measurements = []
             valid_covariances = []
+            valid_tracker_ids = []
 
             if len(self.localTrackersMeasurementList) != 0:
                 for mu, cov, h_t_type, tracker_id in zip(
@@ -780,6 +926,7 @@ class CovarianceIntersectionFilter(FilterBase):
 
                     valid_measurements.append(mu)
                     valid_covariances.append(adjusted_cov)
+                    valid_tracker_ids.append(tracker_id)
 
                 added = len(valid_measurements)
 
@@ -809,37 +956,25 @@ class CovarianceIntersectionFilter(FilterBase):
                     for mu, cov in zip(valid_measurements, valid_covariances):
                         meas_estimates.append((mu[:meas_dim], cov[:meas_dim, :meas_dim]))
 
-                    if len(meas_estimates) == 1:
-                        # Single measurement: no need to fuse measurements together
-                        z_meas, R_meas = meas_estimates[0]
-                    else:
-                        # Multiple measurements: CI-fuse them into one combined measurement
-                        z_meas, R_meas = _ci_fuse_multi(meas_estimates)
+                    # Extract source participant IDs for SABRE adaptation
+                    source_ids = [tid // max_id for tid in valid_tracker_ids]
+                    z_meas, R_meas = self._fuse_measurements(meas_estimates, source_ids=source_ids)
 
-                    # CI-fuse prediction with combined measurement
-                    # omega → 1: prediction trusted more (prediction cov smaller)
-                    # omega → 0: measurement trusted more (measurement cov smaller)
-                    z_fused, P_fused_meas, omega = _ci_fuse(
+                    # Post-fusion hook: SABRE uses this to update per-source NIS
+                    if hasattr(self, '_post_fusion_update'):
+                        S_pred = R_pred + H @ self.P_hat_t @ H.T
+                        self._post_fusion_update(source_ids, valid_measurements, z_pred, S_pred)
+
+                    # ICI-fuse prediction with combined measurement
+                    # ICI is less conservative than CI — tighter bounds, more
+                    # sensitive to R differences (benefits GPEM)
+                    z_fused, P_fused_meas, omega = _ici_fuse(
                         z_pred, R_pred, z_meas, R_meas)
 
-                    # --- FULL STATE UPDATE from CI result ---
-                    # We need to update the full state (including velocity and
-                    # cross-covariances) based on the CI-fused position.
-                    #
-                    # Approach: Use the MEASUREMENT (not CI result) as the Kalman
-                    # update input, with the measurement covariance R_meas. This is
-                    # a standard Kalman update that properly corrects all state
-                    # components and cross-covariances. The CI influence comes
-                    # through R_meas: smaller R (from GPEM) → larger Kalman gain →
-                    # measurement pulls estimate more.
-                    #
-                    # Why not use CI's P_fused as R? Because that would double-count
-                    # the prediction: CI already balanced pred vs meas, then Kalman
-                    # would re-balance the CI result against the same prediction.
-                    #
-                    # The CI fusion was used to determine the measurement weighting
-                    # when multiple measurements exist. For the final state update,
-                    # we use the CI-combined measurement z_meas with R_meas.
+                    # --- KALMAN UPDATE with measurement ---
+                    # Standard Kalman update using the raw/CI-combined measurement.
+                    # The Kalman gain K is determined by R_meas — smaller R from
+                    # GPEM at close range → larger K → measurement pulls more.
                     Z_meas = z_meas.reshape(-1, 1)
                     self.X_hat_t, self.P_hat_t = utils.kalman_update(
                         self.X_hat_t, self.P_hat_t, Z_meas, R_meas, H)
@@ -847,12 +982,10 @@ class CovarianceIntersectionFilter(FilterBase):
                     # Store the fused position for velocity estimation
                     z_fused_pos = np.array([self.X_hat_t[0, 0], self.X_hat_t[1, 0]])
 
-                    # Store measurement covariance for passthrough mode
+                    # Store raw measurement covariance for passthrough
                     self.last_measurement_cov = R_meas[:2, :2].copy() if R_meas.shape[0] >= 2 else R_meas.copy()
 
-                    # Passthrough mode: override CI-fused covariance with raw measurement cov
-                    # This ensures the output covariance reflects GPEM predictions directly
-                    # rather than the (more conservative) CI-fused covariance.
+                    # Passthrough: override position covariance with CI-fused P
                     if self.passthrough_covariance and self.last_measurement_cov is not None:
                         self.P_hat_t[0:2, 0:2] = self.last_measurement_cov
 

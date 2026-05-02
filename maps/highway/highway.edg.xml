@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<edges>
+    <!-- Main highway (3 lanes, 70 mph, north-south) -->
+    <edge id="HW01" from="H0" to="H1" numLanes="3" speed="31.29"/>
+    <edge id="HW10" from="H1" to="H0" numLanes="3" speed="31.29"/>
+    <edge id="HW12" from="H1" to="H2" numLanes="3" speed="31.29"/>
+    <edge id="HW21" from="H2" to="H1" numLanes="3" speed="31.29"/>
+    <edge id="HW23" from="H2" to="H3" numLanes="3" speed="31.29"/>
+    <edge id="HW32" from="H3" to="H2" numLanes="3" speed="31.29"/>
+    <edge id="HW34" from="H3" to="H4" numLanes="3" speed="31.29"/>
+    <edge id="HW43" from="H4" to="H3" numLanes="3" speed="31.29"/>
+
+    <!-- On-ramps -->
+    <edge id="ON1" from="R1E" to="H1" numLanes="1" speed="22.22"/>
+    <edge id="ON2" from="R2E" to="H2" numLanes="1" speed="22.22"/>
+    <edge id="ON3" from="R3E" to="H3" numLanes="1" speed="22.22"/>
+
+    <!-- Off-ramps -->
+    <edge id="OFF1" from="H1" to="R1E" numLanes="1" speed="22.22"/>
+    <edge id="OFF2" from="H2" to="R2E" numLanes="1" speed="22.22"/>
+    <edge id="OFF3" from="H3" to="R3E" numLanes="1" speed="22.22"/>
+
+    <!-- Cross streets (2 lanes, 45 mph) -->
+    <edge id="CS1_RE" from="R1E" to="C1E" numLanes="2" speed="20.12"/>
+    <edge id="CS1_ER" from="C1E" to="R1E" numLanes="2" speed="20.12"/>
+    <edge id="CS1_RW" from="R1E" to="C1W" numLanes="2" speed="20.12"/>
+    <edge id="CS1_WR" from="C1W" to="R1E" numLanes="2" speed="20.12"/>
+
+    <edge id="CS2_RE" from="R2E" to="C2E" numLanes="2" speed="20.12"/>
+    <edge id="CS2_ER" from="C2E" to="R2E" numLanes="2" speed="20.12"/>
+    <edge id="CS2_RW" from="R2E" to="C2W" numLanes="2" speed="20.12"/>
+    <edge id="CS2_WR" from="C2W" to="R2E" numLanes="2" speed="20.12"/>
+
+    <edge id="CS3_RE" from="R3E" to="C3E" numLanes="2" speed="20.12"/>
+    <edge id="CS3_ER" from="C3E" to="R3E" numLanes="2" speed="20.12"/>
+    <edge id="CS3_RW" from="R3E" to="C3W" numLanes="2" speed="20.12"/>
+    <edge id="CS3_WR" from="C3W" to="R3E" numLanes="2" speed="20.12"/>
+</edges>

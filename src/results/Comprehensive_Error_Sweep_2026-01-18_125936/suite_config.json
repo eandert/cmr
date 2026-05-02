@@ -1,0 +1,216 @@
+{
+  "name": "Comprehensive_Error_Sweep",
+  "description": "Test all error types at 1-10% CAV error rates with PointPillars OS1_128",
+  "runs_per_config": 10,
+  "warmup_steps": 500,
+  "record_steps": 2000,
+  "max_steps": null,
+  "error_injection_start": 500,
+  "error_injection_end": null,
+  "baseline": {
+    "name": "baseline_no_errors",
+    "description": "PointPillars OS1_128 baseline with no injected errors"
+  },
+  "variants": [
+    {
+      "name": "extrinsics_1pct",
+      "description": "Sensor Calibration Error affecting 1% of CAVs"
+    },
+    {
+      "name": "extrinsics_2pct",
+      "description": "Sensor Calibration Error affecting 2% of CAVs"
+    },
+    {
+      "name": "extrinsics_3pct",
+      "description": "Sensor Calibration Error affecting 3% of CAVs"
+    },
+    {
+      "name": "extrinsics_4pct",
+      "description": "Sensor Calibration Error affecting 4% of CAVs"
+    },
+    {
+      "name": "extrinsics_5pct",
+      "description": "Sensor Calibration Error affecting 5% of CAVs"
+    },
+    {
+      "name": "extrinsics_6pct",
+      "description": "Sensor Calibration Error affecting 6% of CAVs"
+    },
+    {
+      "name": "extrinsics_7pct",
+      "description": "Sensor Calibration Error affecting 7% of CAVs"
+    },
+    {
+      "name": "extrinsics_8pct",
+      "description": "Sensor Calibration Error affecting 8% of CAVs"
+    },
+    {
+      "name": "extrinsics_9pct",
+      "description": "Sensor Calibration Error affecting 9% of CAVs"
+    },
+    {
+      "name": "extrinsics_10pct",
+      "description": "Sensor Calibration Error affecting 10% of CAVs"
+    },
+    {
+      "name": "localization_1pct",
+      "description": "Localization/GPS Drift affecting 1% of CAVs"
+    },
+    {
+      "name": "localization_2pct",
+      "description": "Localization/GPS Drift affecting 2% of CAVs"
+    },
+    {
+      "name": "localization_3pct",
+      "description": "Localization/GPS Drift affecting 3% of CAVs"
+    },
+    {
+      "name": "localization_4pct",
+      "description": "Localization/GPS Drift affecting 4% of CAVs"
+    },
+    {
+      "name": "localization_5pct",
+      "description": "Localization/GPS Drift affecting 5% of CAVs"
+    },
+    {
+      "name": "localization_6pct",
+      "description": "Localization/GPS Drift affecting 6% of CAVs"
+    },
+    {
+      "name": "localization_7pct",
+      "description": "Localization/GPS Drift affecting 7% of CAVs"
+    },
+    {
+      "name": "localization_8pct",
+      "description": "Localization/GPS Drift affecting 8% of CAVs"
+    },
+    {
+      "name": "localization_9pct",
+      "description": "Localization/GPS Drift affecting 9% of CAVs"
+    },
+    {
+      "name": "localization_10pct",
+      "description": "Localization/GPS Drift affecting 10% of CAVs"
+    },
+    {
+      "name": "mal_remove_1pct",
+      "description": "Malicious Detection Removal affecting 1% of CAVs"
+    },
+    {
+      "name": "mal_remove_2pct",
+      "description": "Malicious Detection Removal affecting 2% of CAVs"
+    },
+    {
+      "name": "mal_remove_3pct",
+      "description": "Malicious Detection Removal affecting 3% of CAVs"
+    },
+    {
+      "name": "mal_remove_4pct",
+      "description": "Malicious Detection Removal affecting 4% of CAVs"
+    },
+    {
+      "name": "mal_remove_5pct",
+      "description": "Malicious Detection Removal affecting 5% of CAVs"
+    },
+    {
+      "name": "mal_remove_6pct",
+      "description": "Malicious Detection Removal affecting 6% of CAVs"
+    },
+    {
+      "name": "mal_remove_7pct",
+      "description": "Malicious Detection Removal affecting 7% of CAVs"
+    },
+    {
+      "name": "mal_remove_8pct",
+      "description": "Malicious Detection Removal affecting 8% of CAVs"
+    },
+    {
+      "name": "mal_remove_9pct",
+      "description": "Malicious Detection Removal affecting 9% of CAVs"
+    },
+    {
+      "name": "mal_remove_10pct",
+      "description": "Malicious Detection Removal affecting 10% of CAVs"
+    },
+    {
+      "name": "mal_add_1pct",
+      "description": "Malicious Fake Detection affecting 1% of CAVs"
+    },
+    {
+      "name": "mal_add_2pct",
+      "description": "Malicious Fake Detection affecting 2% of CAVs"
+    },
+    {
+      "name": "mal_add_3pct",
+      "description": "Malicious Fake Detection affecting 3% of CAVs"
+    },
+    {
+      "name": "mal_add_4pct",
+      "description": "Malicious Fake Detection affecting 4% of CAVs"
+    },
+    {
+      "name": "mal_add_5pct",
+      "description": "Malicious Fake Detection affecting 5% of CAVs"
+    },
+    {
+      "name": "mal_add_6pct",
+      "description": "Malicious Fake Detection affecting 6% of CAVs"
+    },
+    {
+      "name": "mal_add_7pct",
+      "description": "Malicious Fake Detection affecting 7% of CAVs"
+    },
+    {
+      "name": "mal_add_8pct",
+      "description": "Malicious Fake Detection affecting 8% of CAVs"
+    },
+    {
+      "name": "mal_add_9pct",
+      "description": "Malicious Fake Detection affecting 9% of CAVs"
+    },
+    {
+      "name": "mal_add_10pct",
+      "description": "Malicious Fake Detection affecting 10% of CAVs"
+    },
+    {
+      "name": "mal_convoy_1pct",
+      "description": "Malicious Convoy Injection affecting 1% of CAVs"
+    },
+    {
+      "name": "mal_convoy_2pct",
+      "description": "Malicious Convoy Injection affecting 2% of CAVs"
+    },
+    {
+      "name": "mal_convoy_3pct",
+      "description": "Malicious Convoy Injection affecting 3% of CAVs"
+    },
+    {
+      "name": "mal_convoy_4pct",
+      "description": "Malicious Convoy Injection affecting 4% of CAVs"
+    },
+    {
+      "name": "mal_convoy_5pct",
+      "description": "Malicious Convoy Injection affecting 5% of CAVs"
+    },
+    {
+      "name": "mal_convoy_6pct",
+      "description": "Malicious Convoy Injection affecting 6% of CAVs"
+    },
+    {
+      "name": "mal_convoy_7pct",
+      "description": "Malicious Convoy Injection affecting 7% of CAVs"
+    },
+    {
+      "name": "mal_convoy_8pct",
+      "description": "Malicious Convoy Injection affecting 8% of CAVs"
+    },
+    {
+      "name": "mal_convoy_9pct",
+      "description": "Malicious Convoy Injection affecting 9% of CAVs"
+    },
+    {
+      "name": "mal_convoy_10pct",
+      "description": "Malicious Convoy Injection affecting 10% of CAVs"
+    }
+  ]
+}

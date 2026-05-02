@@ -23,6 +23,8 @@ LOCALIZER_MODELS = {
     "ct_icp": "kiss_icp",
     "kiss_icp_accurate": "kiss_icp",     # kiss_icp IS the accurate cross-seq data now
     "orb_slam3_accurate": "kiss_icp_noisy",  # Placeholder: use noisy KISS-ICP until real ORB-SLAM3 data available
+    "kiss_icp_clean_seed": "kiss_icp",       # Clean GPS seed → same ICP model
+    "kiss_icp_noisy_seed": "kiss_icp_noisy", # Noisy GPS seed → noisy ICP model
 }
 
 # MAE to standard deviation conversion factor (half-normal distribution)
@@ -211,6 +213,14 @@ def get_localizer(localizer_type: str, error_package: 'ErrorPackage',
     lat_quad_coeffs = list(lat_quad) if lat_quad else None
     long_quad_coeffs = list(long_quad) if long_quad else None
     
+    # Load full model data for MSE computation (has bias + variance regressions)
+    try:
+        from sensor_model_loader import load_sensor_model
+        csv_name = LOCALIZER_MODELS.get(localizer_type, localizer_type.lower())
+        model_data = load_sensor_model(csv_name)
+    except Exception:
+        model_data = None
+
     return Localizer(
         lateral_error_coefficients=lat_linear_coeffs,
         longitudinal_error_coefficients=long_linear_coeffs,
@@ -220,7 +230,8 @@ def get_localizer(localizer_type: str, error_package: 'ErrorPackage',
         lateral_error_coefficients_quad=lat_quad_coeffs,
         longitudinal_error_coefficients_quad=long_quad_coeffs,
         velocity_bins=distributions,
-        localizer_type=localizer_type
+        localizer_type=localizer_type,
+        model_data=model_data,
     )
 
 class Localizer:
@@ -253,10 +264,10 @@ class Localizer:
     DEFAULT_LATERAL_QUAD_COEFFICIENTS = [0.015, 0.0005, 0.00002]
     DEFAULT_LONGITUDINAL_QUAD_COEFFICIENTS = [0.02, 0.0008, 0.00003]
     
-    def __init__(self, lateral_error_coefficients, longitudinal_error_coefficients, error_package, 
+    def __init__(self, lateral_error_coefficients, longitudinal_error_coefficients, error_package,
                  use_gpem_model=False, use_quadratic=False,
                  lateral_error_coefficients_quad=None, longitudinal_error_coefficients_quad=None,
-                 velocity_bins=None, localizer_type=None):
+                 velocity_bins=None, localizer_type=None, model_data=None):
         """
         Initialize the localizer with its error models.
         
@@ -294,6 +305,18 @@ class Localizer:
         self.lateral_bins = self.velocity_bins.get('lateral', [])
         self.longitudinal_bins = (self.velocity_bins.get('longitudinal', [])
                                   or self.velocity_bins.get('radial', []))
+
+        # Store full model data for MSE computation (bias² + variance)
+        self._model_data = model_data
+
+        # Ornstein-Uhlenbeck drift state for realistic localization error
+        # Instead of IID noise per frame, errors persist and drift slowly
+        # theta: mean-reversion rate (lower = more persistent drift)
+        # At theta=0.5 with dt=0.1, autocorrelation ~0.95 between frames (~2s half-life)
+        self._ou_theta = 0.5       # Mean-reversion rate (1/s)
+        self._ou_dt = 0.1          # Timestep (matches SUMO step_length)
+        self._ou_long_state = 0.0  # Current longitudinal drift (meters)
+        self._ou_lat_state = 0.0   # Current lateral drift (meters)
 
         # Refit regressions from bin stds if bins are available
         if self.lateral_bins or self.longitudinal_bins:
@@ -460,18 +483,58 @@ class Localizer:
         else:
             return self._get_longitudinal_std_average()
     
+    def _clamp_velocity(self, velocity: float) -> float:
+        """Clamp velocity to the range covered by evaluation bins.
+
+        Prevents regression extrapolation beyond measured data (e.g., highway
+        speeds beyond the 22 m/s max of the evaluation dataset).
+        """
+        bins = self.longitudinal_bins or self.lateral_bins
+        if not bins:
+            return velocity
+        specific = [b for b in bins if (b.max_vel - b.min_vel) <= 10]
+        if not specific:
+            return velocity
+        max_v = max(b.max_vel for b in specific)
+        min_v = min(b.min_vel for b in specific)
+        return max(min_v, min(velocity, max_v))
+
+    def get_longitudinal_mse(self, velocity: float) -> float:
+        """Get MSE (bias² + variance) for longitudinal error. Falls back to std²."""
+        velocity = self._clamp_velocity(velocity)
+        if self.use_gpem_model and self._model_data:
+            params = self._model_data.params.get('longitudinal') or self._model_data.params.get('radial')
+            if params and params.has_var_regression:
+                mse = params.predict_mse(velocity, self.use_quadratic)
+                if mse is not None:
+                    return mse
+        std = self.get_longitudinal_localization_std(velocity)
+        return std**2
+
+    def get_lateral_mse(self, velocity: float) -> float:
+        """Get MSE (bias² + variance) for lateral error. Falls back to std²."""
+        velocity = self._clamp_velocity(velocity)
+        if self.use_gpem_model and self._model_data:
+            params = self._model_data.params.get('lateral')
+            if params and params.has_var_regression:
+                mse = params.predict_mse(velocity, self.use_quadratic)
+                if mse is not None:
+                    return mse
+        std = self.get_lateral_localization_std(velocity)
+        return std**2
+
     def get_localization_covariance(self, velocity: float, yaw: float) -> np.ndarray:
         """
         Get the 2x2 localization covariance matrix rotated by the vehicle's yaw.
-        
-        Uses velocity bin lookup for std devs, then rotates into world frame.
+
+        Uses MSE (bias² + variance) when available, else std².
         """
         import gaussians
-        
-        sigma_long = self.get_longitudinal_localization_std(velocity)
-        sigma_lat = self.get_lateral_localization_std(velocity)
-        
-        g = gaussians.BivariateGaussian(sigma_long**2, sigma_lat**2, yaw)
+
+        long_mse = self.get_longitudinal_mse(velocity)
+        lat_mse = self.get_lateral_mse(velocity)
+
+        g = gaussians.BivariateGaussian(long_mse, lat_mse, yaw)
         return g.covariance
 
     def _calculate_velocity_based_std(self, velocity: float) -> float:
@@ -530,7 +593,17 @@ class Localizer:
 
     def get_localization_pose(self, ground_truth_x, ground_truth_y, ground_truth_yaw, velocity, has_error=False):
         """
-        Get the localized pose with potential errors.
+        Get the localized pose with persistent, slowly-drifting errors.
+
+        Uses an Ornstein-Uhlenbeck process so that localization error persists
+        across frames and drifts slowly, rather than being IID per frame.
+        This is more realistic: SLAM/ICP localizers have pose estimates that
+        drift gradually, not jump randomly each frame.
+
+        The OU process ensures:
+        - Long-term variance matches the characterized error distribution
+        - Frame-to-frame correlation is high (~0.95 at dt=0.1s, theta=0.5)
+        - Drift half-life is ~1.4s (mean-reversion keeps it bounded)
 
         Args:
             ground_truth_x (float): The ground truth x-coordinate.
@@ -542,8 +615,29 @@ class Localizer:
         Returns:
             tuple: The localized pose as (x, y, yaw) with injected errors.
         """
-        lateral_error = self.sample_lateral_error(velocity)
-        longitudinal_error = self.sample_longitudinal_error(velocity)
+        # Get the target std for this velocity (from characterized error model)
+        long_std = abs(self.get_longitudinal_localization_std(velocity))
+        lat_std = abs(self.get_lateral_localization_std(velocity))
+
+        # Ornstein-Uhlenbeck update: dx = -theta * x * dt + sigma * sqrt(dt) * N(0,1)
+        # Stationary variance of OU = sigma² / (2*theta), so sigma = std * sqrt(2*theta)
+        #
+        # Theta scales with velocity: slower vehicles have less odometry data,
+        # so drift persists longer (lower theta = slower mean-reversion).
+        # At 0 m/s: theta = 0.125 (half-life ~5.5s, 4x more persistent)
+        # At 25 m/s: theta = 0.5 (half-life ~1.4s, normal)
+        dt = self._ou_dt
+        max_speed = 25.0  # m/s, roughly highway speed
+        speed_ratio = min(velocity / max_speed, 1.0)
+        theta = self._ou_theta * (0.25 + 0.75 * speed_ratio)  # range: [0.125, 0.5]
+        ou_sigma_long = long_std * math.sqrt(2.0 * theta)
+        ou_sigma_lat = lat_std * math.sqrt(2.0 * theta)
+
+        self._ou_long_state += -theta * self._ou_long_state * dt + ou_sigma_long * math.sqrt(dt) * np.random.normal()
+        self._ou_lat_state += -theta * self._ou_lat_state * dt + ou_sigma_lat * math.sqrt(dt) * np.random.normal()
+
+        longitudinal_error = self._ou_long_state
+        lateral_error = self._ou_lat_state
 
         adjusted_x = ground_truth_x + longitudinal_error * math.cos(ground_truth_yaw) - lateral_error * math.sin(ground_truth_yaw)
         adjusted_y = ground_truth_y + longitudinal_error * math.sin(ground_truth_yaw) + lateral_error * math.cos(ground_truth_yaw)

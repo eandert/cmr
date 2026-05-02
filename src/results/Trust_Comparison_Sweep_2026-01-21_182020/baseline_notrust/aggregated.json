@@ -1,0 +1,13 @@
+{
+  "config_name": "baseline_notrust",
+  "num_runs": 1,
+  "avg_global_amota_mean": 0.7439223057644103,
+  "avg_global_amota_std": 0,
+  "avg_cis_amota_mean": 0.9822222222222223,
+  "avg_cis_amota_std": 0,
+  "avg_cav_amota_mean": 0.0,
+  "avg_cav_amota_std": 0,
+  "avg_perception_anomalies_mean": 0,
+  "avg_perception_anomalies_std": 0,
+  "total_anomaly_detections": 0
+}

@@ -56,7 +56,8 @@ class ParticleFilter(FilterBase):
 
         # Process noise parameter — lower than Kalman because each particle
         # gets independent noise, so the ensemble spread grows faster
-        self.sigma_a = 1.0
+        from filters.filter_config import get_sigma_a
+        self.sigma_a = get_sigma_a("pf")
 
         # State estimate (weighted mean)
         self.X_hat_t = np.zeros((self.F_t_len, 1))
@@ -233,7 +234,7 @@ class ParticleFilter(FilterBase):
                     cov_3x3[0:2, 0:2] = match_cov[0:2, 0:2]
                 else:
                     cov_3x3[0:2, 0:2] = np.eye(2) * 0.25
-                cov_3x3[2, 2] = 0.1
+                cov_3x3[2, 2] = match.yaw_variance if match.yaw_variance is not None else 0.1
                 self.localTrackersCovarianceList.append(cov_3x3)
             else:
                 self.localTrackersMeasurementList.append(
@@ -308,31 +309,67 @@ class ParticleFilter(FilterBase):
     # Update weights from measurement likelihood
     # ------------------------------------------------------------------
     def _update_weights(self, valid_measurements, valid_covariances):
-        """Weight each particle by Gaussian measurement likelihood."""
+        """Weight each particle by Gaussian measurement likelihood.
+
+        Fully vectorized across both particles (N) and measurements (M):
+          - Batch R inversions: (M, z_dim, z_dim)
+          - Batch innovations: (M, N, z_dim)
+          - Batch Mahalanobis: einsum over all at once
+        """
+        if not valid_measurements:
+            return
+
         H = self._h_t()
+        z_dim = H.shape[0]
         log_weights = np.log(self.weights + 1e-300)
 
-        for z, R in zip(valid_measurements, valid_covariances):
-            z_dim = H.shape[0]
-            z_vec = z[:z_dim]
-            R_use = R[:z_dim, :z_dim] if R.shape[0] >= z_dim else R
+        # Predicted observations for all particles — computed once (N, z_dim)
+        z_pred_all = (H @ self.particles.T).T  # (N, z_dim)
 
-            # Regularize R
-            R_use = R_use + 1e-11 * np.eye(z_dim)
-            try:
-                R_inv = np.linalg.inv(R_use)
-                log_det = np.linalg.slogdet(R_use)[1]
-            except np.linalg.LinAlgError:
-                continue
+        # Stack all measurements and covariances
+        M = len(valid_measurements)
+        z_stack = np.array([z[:z_dim] for z in valid_measurements])  # (M, z_dim)
+        R_stack = np.array([
+            (R[:z_dim, :z_dim] if R.shape[0] >= z_dim else R) + 1e-11 * np.eye(z_dim)
+            for R in valid_covariances
+        ])  # (M, z_dim, z_dim)
 
-            # Predicted observations for all particles: (N, z_dim)
-            z_pred = (H @ self.particles.T).T  # (N, z_dim)
-            innovations = z_vec - z_pred        # (N, z_dim)
+        # Batch invert all R matrices at once
+        try:
+            R_inv_stack = np.linalg.inv(R_stack)  # (M, z_dim, z_dim)
+            log_det_stack = np.linalg.slogdet(R_stack)[1]  # (M,)
+        except np.linalg.LinAlgError:
+            # Fallback: process one at a time
+            for z, R in zip(valid_measurements, valid_covariances):
+                z_vec = z[:z_dim]
+                R_use = (R[:z_dim, :z_dim] if R.shape[0] >= z_dim else R) + 1e-11 * np.eye(z_dim)
+                try:
+                    R_inv = np.linalg.inv(R_use)
+                    log_det = np.linalg.slogdet(R_use)[1]
+                except np.linalg.LinAlgError:
+                    continue
+                innovations = z_vec - z_pred_all
+                mahal = np.sum(innovations @ R_inv * innovations, axis=1)
+                log_weights += -0.5 * (mahal + log_det)
+            self._normalize_log_weights(log_weights)
+            return
 
-            # Log-likelihood: -0.5 * (d^T R^-1 d + log|R| + k*log(2pi))
-            # We drop constant terms since they cancel in normalization
-            mahal = np.sum(innovations @ R_inv * innovations, axis=1)  # (N,)
-            log_weights += -0.5 * (mahal + log_det)
+        # Batch innovations: (M, N, z_dim)
+        # z_stack is (M, z_dim), z_pred_all is (N, z_dim)
+        innovations = z_stack[:, np.newaxis, :] - z_pred_all[np.newaxis, :, :]  # (M, N, z_dim)
+
+        # Batch Mahalanobis: for each measurement m, compute d_m^T R_m^{-1} d_m for all N particles
+        # innovations @ R_inv gives (M, N, z_dim) @ (M, z_dim, z_dim) -> need einsum
+        # mahal[m, n] = innovations[m,n,:] @ R_inv[m,:,:] @ innovations[m,n,:]
+        mahal = np.einsum('mni,mij,mnj->mn', innovations, R_inv_stack, innovations)  # (M, N)
+
+        # Accumulate log-likelihoods across all measurements
+        log_weights += np.sum(-0.5 * (mahal + log_det_stack[:, np.newaxis]), axis=0)  # (N,)
+
+        self._normalize_log_weights(log_weights)
+
+    def _normalize_log_weights(self, log_weights):
+        """Normalize log weights to proper probability distribution."""
 
         # Normalize in log space for numerical stability
         max_log = np.max(log_weights)

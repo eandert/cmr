@@ -1,0 +1,10 @@
+{
+  "config_name": "mal_remove_8pct",
+  "num_runs": 1,
+  "avg_global_amota_mean": 0.6241271661906582,
+  "avg_global_amota_std": 0,
+  "avg_cis_amota_mean": 0.9966124661246613,
+  "avg_cis_amota_std": 0,
+  "avg_cav_amota_mean": 0.9956140350877193,
+  "avg_cav_amota_std": 0
+}

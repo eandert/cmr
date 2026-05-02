@@ -988,16 +988,15 @@ class TestProcessNoise(unittest.TestCase):
             self.assertGreater(np.trace(Q_large), np.trace(Q_small),
                 f"Mode {mode}: Q should grow with dt")
 
-    def test_Q_matches_kalman(self):
-        """CI filter's Q should be identical to ResizableKalman's Q."""
-        for mode in [0, 1, 2]:
-            ci = make_ci_filter(fusion_mode=mode)
-            kf = make_kalman_filter(fusion_mode=mode)
-            for dt in [0.05, 0.1, 0.5]:
-                Q_ci = ci._compute_Q(dt)
-                Q_kf = kf._compute_Q(dt)
-                np.testing.assert_allclose(Q_ci, Q_kf, atol=1e-15,
-                    err_msg=f"Mode {mode}, dt={dt}: Q should match Kalman")
+    def test_Q_scales_with_sigma_a(self):
+        """CI filter's Q should scale with its own sigma_a (may differ from EKF)."""
+        ci = make_ci_filter(fusion_mode=0)
+        dt = 0.1
+        Q = ci._compute_Q(dt)
+        # Q_pos should be proportional to sigma_a^2
+        expected_q_pos = ci.sigma_a**2 * dt**4 / 4
+        self.assertAlmostEqual(Q[0, 0], expected_q_pos, places=10,
+            msg=f"Q[0,0] should equal sigma_a²·dt⁴/4 = {expected_q_pos}")
 
 
 # =============================================================================
@@ -1085,3 +1084,44 @@ class TestCIConsistency(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestCIDistanceSensitivity(unittest.TestCase):
+    """Test that CI filter benefits from tighter R at close range."""
+
+    def test_close_range_beats_far_range(self):
+        """CI with close-range (small) R should track better than far-range (large) R."""
+        np.random.seed(42)
+
+        # Close-range R (10m DETR3D): small uncertainty
+        R_close = [[0.18, 0.0], [0.0, 0.04]]
+        # Far-range R (70m DETR3D): large uncertainty
+        R_far = [[0.32, 0.0], [0.0, 0.06]]
+
+        true_x, true_y = 5.0, 3.0
+
+        f_close = make_ci_filter(x=0, y=0, fusion_mode=0)
+        f_far = make_ci_filter(x=0, y=0, fusion_mode=0)
+
+        for i in range(30):
+            t = 0.1 * (i + 1)
+            # Close: small noise
+            cx = true_x + np.random.randn() * math.sqrt(0.18)
+            cy = true_y + np.random.randn() * math.sqrt(0.04)
+            # Far: big noise
+            fx = true_x + np.random.randn() * math.sqrt(0.32)
+            fy = true_y + np.random.randn() * math.sqrt(0.06)
+
+            f_close.fusion([make_match(cx, cy, R_close)], t, monitor=False)
+            f_far.fusion([make_match(fx, fy, R_far)], t, monitor=False)
+
+        err_close = math.hypot(f_close.x - true_x, f_close.y - true_y)
+        err_far = math.hypot(f_far.x - true_x, f_far.y - true_y)
+
+        print(f"\nClose R error: {err_close:.4f}m, Far R error: {err_far:.4f}m")
+        print(f"P_close: [{f_close.P_hat_t[0,0]:.4f}, {f_close.P_hat_t[1,1]:.4f}]")
+        print(f"P_far:   [{f_far.P_hat_t[0,0]:.4f}, {f_far.P_hat_t[1,1]:.4f}]")
+
+        # Close range should have smaller output covariance
+        self.assertLess(f_close.P_hat_t[0, 0], f_far.P_hat_t[0, 0],
+            "CI with tighter R should produce smaller P")

@@ -1,0 +1,9 @@
+scenario_id: Day20/testoutput_CAV_data_2022-03-17-12-14-33_0
+detector: pointpillar_v2v4real
+center_world: [-266.330399, -3059.221067, -20.451720]
+vehicles: [astuff, tesla]
+n_frames_per_vehicle: {'tesla': 89, 'astuff': 89}
+frame_rate_hz: 10.000000
+n_detections_total: 2060
+n_gt_total: 2057
+split: train

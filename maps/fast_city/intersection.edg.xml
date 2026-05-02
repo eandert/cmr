@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<edges>
+    <!-- North approach (curves slightly east) -->
+    <edge id="N_NW" from="N" to="NW" numLanes="1" speed="13.89" shape="40,500 35,400 25,280 10,180 0,100"/>
+    <edge id="NW_C" from="NW" to="100" numLanes="3" speed="13.89"/>
+    <edge id="C_NW" from="100" to="NW" numLanes="3" speed="13.89"/>
+    <edge id="NW_N" from="NW" to="N" numLanes="1" speed="13.89" shape="0,100 10,180 25,280 35,400 40,500"/>
+    <!-- South approach (straight) -->
+    <edge id="S_SW" from="S" to="SW" numLanes="1" speed="13.89"/>
+    <edge id="SW_C" from="SW" to="100" numLanes="3" speed="13.89"/>
+    <edge id="C_SW" from="100" to="SW" numLanes="3" speed="13.89"/>
+    <edge id="SW_S" from="SW" to="S" numLanes="1" speed="13.89"/>
+    <!-- East approach (curves slightly south) -->
+    <edge id="E_EW" from="E" to="EW" numLanes="1" speed="13.89" shape="500,-35 400,-30 280,-20 180,-8 100,0"/>
+    <edge id="EW_C" from="EW" to="100" numLanes="3" speed="13.89"/>
+    <edge id="C_EW" from="100" to="EW" numLanes="3" speed="13.89"/>
+    <edge id="EW_E" from="EW" to="E" numLanes="1" speed="13.89" shape="100,0 180,-8 280,-20 400,-30 500,-35"/>
+    <!-- West approach (straight) -->
+    <edge id="W_WW" from="W" to="WW" numLanes="1" speed="13.89"/>
+    <edge id="WW_C" from="WW" to="100" numLanes="3" speed="13.89"/>
+    <edge id="C_WW" from="100" to="WW" numLanes="3" speed="13.89"/>
+    <edge id="WW_W" from="WW" to="W" numLanes="1" speed="13.89"/>
+</edges>

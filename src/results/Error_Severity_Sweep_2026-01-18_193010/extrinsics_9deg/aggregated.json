@@ -1,0 +1,13 @@
+{
+  "config_name": "extrinsics_9deg",
+  "num_runs": 10,
+  "avg_global_amota_mean": 0.523372557204674,
+  "avg_global_amota_std": 0.04738947778765669,
+  "avg_cis_amota_mean": 0.9907793579984349,
+  "avg_cis_amota_std": 0.001374763853070024,
+  "avg_cav_amota_mean": 0.9913626331077535,
+  "avg_cav_amota_std": 0.002048809941833677,
+  "avg_perception_anomalies_mean": 0.6,
+  "avg_perception_anomalies_std": 1.8973665961010275,
+  "total_anomaly_detections": 6
+}

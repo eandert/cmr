@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nodes>
+    <!-- Main highway nodes (south to north) -->
+    <node id="H0" x="0" y="0" type="priority"/>
+    <node id="H1" x="0" y="1500" type="priority"/>
+    <node id="H2" x="0" y="3000" type="priority"/>
+    <node id="H3" x="0" y="4500" type="priority"/>
+    <node id="H4" x="0" y="6000" type="priority"/>
+
+    <!-- Ramp merge points (east side) -->
+    <node id="R1E" x="200" y="1500" type="priority"/>
+    <node id="R2E" x="200" y="3000" type="priority"/>
+    <node id="R3E" x="200" y="4500" type="priority"/>
+
+    <!-- Cross street endpoints (east/west from ramp nodes) -->
+    <node id="C1E" x="500" y="1500" type="traffic_light"/>
+    <node id="C1W" x="-300" y="1500" type="priority"/>
+    <node id="C2E" x="500" y="3000" type="traffic_light"/>
+    <node id="C2W" x="-300" y="3000" type="priority"/>
+    <node id="C3E" x="500" y="4500" type="traffic_light"/>
+    <node id="C3W" x="-300" y="4500" type="priority"/>
+</nodes>

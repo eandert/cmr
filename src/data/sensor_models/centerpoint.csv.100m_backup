@@ -1,0 +1,16 @@
+# CenterPoint (lidar only) 100m - from mmdetection3d
+# Linear model: abs_error = intercept + slope * distance
+# Quadratic model: abs_error = quad_a * d^2 + quad_b * d + quad_c
+# Bias linear: signed_bias = bias_intercept + bias_slope * distance
+# Bias quadratic: signed_bias = bias_quad_a * d^2 + bias_quad_b * d + bias_quad_c
+# For covariance: std = 1.253 * abs_error (half-normal to std conversion)
+
+error_type,intercept,slope,quad_a,quad_b,quad_c,bias_intercept,bias_slope,bias_quad_a,bias_quad_b,bias_quad_c,unit,notes
+radial,0.069985,0.003006,-1.875243e-05,0.00425167,0.05461426,-0.003602,0.000255,-4.507209e-06,0.000553895,-0.007296135,meters,Range error
+lateral,0.047166,0.002702,-9.52168e-06,0.003334491,0.03936089,0.000322,-0.00036,2.10019e-06,-0.0004990715,0.002043788,meters,Cross-range error
+vertical,0.038473,0.002439,-1.95392e-06,0.00256901,0.03687115,0.010244,-0.000413,-8.670876e-06,0.0001631864,0.003136261,meters,Elevation error
+yaw,0.137626,-0.001265,3.003553e-05,-0.003259585,0.1622453,-4.1e-05,-6e-06,-6.588559e-07,3.803668e-05,-0.0005808273,radians,Heading angle
+width,0.124811,0.005488,-1.104687e-05,0.006221848,0.1157558,-0.029329,0.000711,8.2452e-06,0.0001635004,-0.02257086,meters,Box width
+length,0.091829,0.001102,-4.757791e-06,0.001417731,0.08792896,0.011249,0.000113,-1.000799e-05,0.000777608,0.003045817,meters,Box length
+box_height,0.070185,0.00207,-5.135599e-07,0.002104252,0.0697642,-0.001645,-4.7e-05,-1.104047e-05,0.0006862666,-0.01069424,meters,Box height
+miss_rate,0.188158,0.007338,3.232998e-05,0.004734259,0.2260186,,,,,,probability,Miss rate

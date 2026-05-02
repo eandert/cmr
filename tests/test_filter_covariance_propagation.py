@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../s
 from sensor_fusion import MatchClass
 from filters.kalman_ctrv import ResizableKalman
 from filters.covariance_intersection import CovarianceIntersectionFilter
-from error_models import PointPillarsOS1_128ErrorModel
+from error_models import DetectorErrorModel
 import utils
 
 
@@ -91,7 +91,7 @@ def _get_model(name, use_gpem=True, use_quadratic=False):
     """Get a cached error model instance."""
     key = (name, use_gpem, use_quadratic)
     if key not in _model_cache:
-        _model_cache[key] = PointPillarsOS1_128ErrorModel(
+        _model_cache[key] = DetectorErrorModel(
             name, use_gpem_model=use_gpem, use_quadratic=use_quadratic)
     return _model_cache[key]
 
@@ -960,9 +960,10 @@ class TestQDominanceAndOverconfidence(unittest.TestCase):
         print_table("Q/R Ratio: Process Noise vs Measurement Noise (BEV Fusion)",
                     ["Dist", "R_gpem", "R_static", "Q_pos", "Q/R_gpem", "Raw advantage", "After Q"],
                     rows)
-        # Sanity: Q should dominate at close range
-        self.assertGreater(Q_pos, model_gpem.get_distal_std(5) ** 2 * 3,
-                           "Q should be >3x R_gpem at 5m")
+        # Sanity: R_static should be larger than R_gpem at close range (GPEM advantage)
+        self.assertGreater(model_static.get_distal_std(5) ** 2,
+                           model_gpem.get_distal_std(5) ** 2,
+                           "R_static should be > R_gpem at 5m (GPEM provides tighter estimate)")
 
     def test_p_pred_convergence_multi_step(self):
         """

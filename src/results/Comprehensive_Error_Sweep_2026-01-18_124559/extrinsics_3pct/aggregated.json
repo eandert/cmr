@@ -1,0 +1,10 @@
+{
+  "config_name": "extrinsics_3pct",
+  "num_runs": 1,
+  "avg_global_amota_mean": 0.6450898774428188,
+  "avg_global_amota_std": 0,
+  "avg_cis_amota_mean": 0.9930830039525692,
+  "avg_cis_amota_std": 0,
+  "avg_cav_amota_mean": 0.9935897435897436,
+  "avg_cav_amota_std": 0
+}

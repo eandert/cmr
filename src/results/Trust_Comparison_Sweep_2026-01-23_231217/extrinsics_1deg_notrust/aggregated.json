@@ -1,0 +1,13 @@
+{
+  "config_name": "extrinsics_1deg_notrust",
+  "num_runs": 10,
+  "avg_global_amota_mean": 0.44400927546960944,
+  "avg_global_amota_std": 0.018327887367639302,
+  "avg_cis_amota_mean": 0.9907851364442295,
+  "avg_cis_amota_std": 0.0005126021780183109,
+  "avg_cav_amota_mean": 0.9893465750323455,
+  "avg_cav_amota_std": 0.005847690430385904,
+  "avg_perception_anomalies_mean": 3.7,
+  "avg_perception_anomalies_std": 2.496664441476534,
+  "total_anomaly_detections": 37
+}

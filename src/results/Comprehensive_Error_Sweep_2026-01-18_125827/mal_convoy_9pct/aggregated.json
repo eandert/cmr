@@ -1,0 +1,10 @@
+{
+  "config_name": "mal_convoy_9pct",
+  "num_runs": 1,
+  "avg_global_amota_mean": 0.6446433907972378,
+  "avg_global_amota_std": 0,
+  "avg_cis_amota_mean": 0.9949685534591194,
+  "avg_cis_amota_std": 0,
+  "avg_cav_amota_mean": 0.989506172839506,
+  "avg_cav_amota_std": 0
+}

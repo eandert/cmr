@@ -141,135 +141,14 @@ def calculate_amotp(detected_objects, ground_truth_objects, iou_threshold=0.1,
     return total_distance / len(matches)
 
 
-def polygon_area_signed(vertices):
-    """
-    Calculate the signed area of a polygon using the shoelace formula.
-    Positive area = counter-clockwise winding
-    Negative area = clockwise winding
-    """
-    n = len(vertices)
-    if n < 3:
-        return 0.0
-    
-    vertices = np.asarray(vertices, dtype=np.float64)
-    x = vertices[:, 0]
-    y = vertices[:, 1]
-    
-    # Signed area (positive for CCW, negative for CW)
-    area = 0.5 * (np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1)))
-    return area
-
-
-def polygon_area(vertices):
-    """
-    Calculate the absolute area of a polygon.
-    """
-    return abs(polygon_area_signed(vertices))
-
-
-def ensure_ccw(vertices):
-    """
-    Ensure polygon vertices are in counter-clockwise order.
-    """
-    vertices = np.asarray(vertices, dtype=np.float64)
-    if len(vertices) < 3:
-        return vertices
-    
-    # Check winding order using signed area
-    signed_area = polygon_area_signed(vertices)
-    
-    # If clockwise (negative area), reverse the order
-    if signed_area < 0:
-        return vertices[::-1].copy()
-    return vertices
-
-
-def line_intersection(p1, p2, p3, p4):
-    """
-    Find the intersection point of two line segments.
-    """
-    x1, y1 = p1[0], p1[1]
-    x2, y2 = p2[0], p2[1]
-    x3, y3 = p3[0], p3[1]
-    x4, y4 = p4[0], p4[1]
-    
-    denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
-    
-    if abs(denom) < 1e-10:
-        return None
-    
-    t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom
-    
-    x = x1 + t * (x2 - x1)
-    y = y1 + t * (y2 - y1)
-    
-    return np.array([x, y], dtype=np.float64)
-
-
-def sutherland_hodgman_clip(subject_polygon, clip_polygon):
-    """
-    Sutherland-Hodgman polygon clipping algorithm.
-    Clips the subject polygon against the clip polygon.
-    Both polygons should be in CCW order.
-    """
-    def inside_edge(point, edge_start, edge_end):
-        """Check if point is on the inside (left side for CCW) of the edge."""
-        return (edge_end[0] - edge_start[0]) * (point[1] - edge_start[1]) - \
-               (edge_end[1] - edge_start[1]) * (point[0] - edge_start[0]) >= -1e-10
-    
-    # Ensure both polygons are CCW
-    subject = ensure_ccw(subject_polygon)
-    clip = ensure_ccw(clip_polygon)
-    
-    if len(subject) == 0 or len(clip) == 0:
-        return np.array([])
-    
-    output = list(subject)
-    
-    for i in range(len(clip)):
-        if len(output) == 0:
-            return np.array([])
-        
-        input_list = output
-        output = []
-        
-        edge_start = clip[i]
-        edge_end = clip[(i + 1) % len(clip)]
-        
-        for j in range(len(input_list)):
-            current = np.asarray(input_list[j], dtype=np.float64)
-            previous = np.asarray(input_list[j - 1], dtype=np.float64)
-            
-            current_inside = inside_edge(current, edge_start, edge_end)
-            previous_inside = inside_edge(previous, edge_start, edge_end)
-            
-            if current_inside:
-                if not previous_inside:
-                    intersection = line_intersection(previous, current, edge_start, edge_end)
-                    if intersection is not None:
-                        output.append(intersection)
-                output.append(current)
-            elif previous_inside:
-                intersection = line_intersection(previous, current, edge_start, edge_end)
-                if intersection is not None:
-                    output.append(intersection)
-    
-    if len(output) < 3:
-        return np.array([])
-    
-    return np.array(output, dtype=np.float64)
+from geometry import polygon_area_signed, polygon_area, ensure_ccw, sutherland_hodgman_clip
 
 
 def convex_polygon_intersection_area(poly1, poly2):
-    """
-    Calculate the intersection area of two convex polygons.
-    Uses Sutherland-Hodgman clipping algorithm.
-    """
+    """Calculate the intersection area of two convex polygons."""
     intersection = sutherland_hodgman_clip(poly1, poly2)
-    
     if len(intersection) < 3:
         return 0.0
-    
     return polygon_area(intersection)
 
 

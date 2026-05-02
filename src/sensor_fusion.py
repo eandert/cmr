@@ -1,4 +1,5 @@
 import math
+import random
 import numpy as np
 from sklearn.cluster import DBSCAN
 import matplotlib.pyplot as plt
@@ -15,8 +16,49 @@ from filters.kalman_ctrv import ResizableKalman
 max_id = 10000
 
 
+# IPDA log-odds defaults (Phase B). All in natural log units.
+#   confirm: P(real) > 20/21 ≈ 0.952
+#   kill:    P(real) <  1/21 ≈ 0.048
+DEFAULT_CONFIRM_LOG_ODDS = math.log(20.0)        #  +2.996
+DEFAULT_KILL_LOG_ODDS    = math.log(1.0 / 20.0)  #  −2.996
+# log(P_miss / (1 − P_miss)) — per-frame miss-evidence decay applied to any
+# matched-but-unmatched-this-frame track. P_miss = 0.30 → −0.847; mild.
+DEFAULT_LOG_LR_MISS      = math.log(0.30 / 0.70)
+# Clamp on individual log-likelihood-ratio updates to keep one strong
+# detection from dominating the entire history.
+LOG_LR_CLAMP = 6.0
+# Numerical safety on Bayesian log-odds (P_TP exactly 0 or 1 → ±inf).
+_P_EPS = 1e-6
+# Per-frame multiplicative decay on `tape_score` when a track is unmatched.
+# 0.5 = rapid decay (drops to ~0.06 in 4 frames; stale tracks coast out
+#       of the AMOTA recall sweep). EMPIRICALLY THE BEST DEFAULT for our
+#       pipeline — confirmed in single-scenario A/B (decay=0.5 beats
+#       0.7, 0.9, 1.0 across every fusion stream).
+# 1.0 = no decay (matches AB3DMOT's behaviour where coasting tracks keep
+#       their latest matched det.score — but our pipeline emits noisier
+#       coasting tracks that benefit from being demoted in the recall
+#       sort). Available as opt-in for ablation.
+TAPE_SCORE_MISS_DECAY = 0.5
+# Phase B.5 — inactive-track preservation grace period (seconds). When a
+# track's S_t falls below kill_log_odds, instead of deleting we mark it
+# inactive and keep it in tracked_list for this many seconds. During that
+# window the Hungarian matcher still considers it as a candidate; a fresh
+# detection that falls within its Mahalanobis gate revives the same ID
+# (S_t bumped above confirm threshold). Beyond the window the track is
+# actually deleted. 1.0 s ≈ 10 frames at V2V4Real's 10Hz — long enough to
+# bridge typical occlusions, short enough that stale tracks don't pollute
+# the matching gate forever.
+DEFAULT_INACTIVE_GRACE_S = 1.0
+
+
+def _logit(p: float) -> float:
+    """log(p / (1 − p)) clamped against the [eps, 1 − eps] range."""
+    p = max(_P_EPS, min(1.0 - _P_EPS, p))
+    return math.log(p / (1.0 - p))
+
+
 class MatchClass:
-    def __init__(self, id, x, y, covariance, dx, dy, d_confidence, confidence, trust_score, object_type, time, width, length, angle, width_std=0.5, length_std=0.5):
+    def __init__(self, id, x, y, covariance, dx, dy, d_confidence, confidence, trust_score, object_type, time, width, length, angle, width_std=0.5, length_std=0.5, yaw_variance=None):
         self.x = x
         self.y = y
         self.covariance = covariance
@@ -33,6 +75,7 @@ class MatchClass:
         self.angle = angle
         self.width_std = width_std
         self.length_std = length_std
+        self.yaw_variance = yaw_variance  # MSE for heading from GPEM
 
 
 
@@ -58,6 +101,33 @@ class GlobalTracked:
         self.fusion_steps = 0
         self.error_monitor = []
         self.num_trackers = 0
+
+        # IPDA log-odds existence score (Phase B). Initialized from the
+        # spawning detection's calibrated P(TP); for detections without
+        # calibration (p_tp absent), defaults to logit(0.5) = 0 — the
+        # legacy "neutral start, gain confidence by re-detection" behavior.
+        self.S_t = _logit(getattr(detected_object, "p_tp", 0.5))
+
+        # AMOTA-tape score: latest matched detection's confidence. Decayed
+        # multiplicatively on miss-frames (TAPE_SCORE_MISS_DECAY) so a track
+        # that goes stale ranks low in V2V4Real's recall sweep — analogous
+        # to how Kalman covariance inflates during prediction.
+        self.tape_score = float(getattr(detected_object, "det_score", 1.0))
+
+        # AB3DMOT-style counters (lifecycle_mode="ab3dmot"). Track confirms
+        # after `min_hits` matched frames, dies after `max_age` consecutive
+        # missed frames. Spawn counts as the first hit.
+        self.hits = 1
+        self.misses_since_match = 0
+
+        # Phase B.5 — inactive-track preservation. is_inactive=True means
+        # this track has had S_t collapse but Fusion is keeping it around
+        # for `inactive_grace_s` so that a fresh detection landing in its
+        # Mahalanobis gate can revive the same ID (no ID switch on brief
+        # occlusions). Tracks emit only when is_inactive is False.
+        self.is_inactive = False
+        self.inactive_since = None  # set when a track becomes inactive
+        self.revive_count = 0       # stats: # of times this track was revived
         self.width = detected_object.dimensions[0]
         self.length = detected_object.dimensions[1]
         self.angle = detected_object.angle
@@ -73,10 +143,11 @@ class GlobalTracked:
 
         # Add this first match
         new_match = MatchClass(detected_object.vehicle_id, detected_object.centroid[0], detected_object.centroid[1], detected_object.error_covariance,
-                               detected_object.velocity_vector[0], detected_object.velocity_vector[1], detected_object.error_covariance, 1.0, 1.0, 
-                               detected_object.type, time, 
+                               detected_object.velocity_vector[0], detected_object.velocity_vector[1], detected_object.error_covariance, 1.0, 1.0,
+                               detected_object.type, time,
                                detected_object.dimensions[0], detected_object.dimensions[1], detected_object.angle,
-                               detected_object.width_std, detected_object.length_std)
+                               detected_object.width_std, detected_object.length_std,
+                               getattr(detected_object, 'yaw_variance', None))
         self.match_list.append(new_match)
 
         # Kalman stuff
@@ -108,16 +179,26 @@ class GlobalTracked:
 
     def update(self, detected_object, time):
         new_match = MatchClass(detected_object.vehicle_id, detected_object.centroid[0], detected_object.centroid[1], detected_object.error_covariance,
-                               detected_object.velocity_vector[0], detected_object.velocity_vector[1], detected_object.error_covariance, 1.0, 1.0, 
-                               detected_object.type, time, 
+                               detected_object.velocity_vector[0], detected_object.velocity_vector[1], detected_object.error_covariance, 1.0, 1.0,
+                               detected_object.type, time,
                                detected_object.dimensions[0], detected_object.dimensions[1], detected_object.angle,
-                               detected_object.width_std, detected_object.length_std)
+                               detected_object.width_std, detected_object.length_std,
+                               getattr(detected_object, 'yaw_variance', None))
         self.match_list.append(new_match)
-        
+
         # Update type voting
         self._update_type_vote(detected_object.type)
 
         self.last_measurement = time
+
+        # AB3DMOT counters
+        self.hits += 1
+        self.misses_since_match = 0
+
+        # Refresh tape_score with the latest matched detection's confidence.
+        # Falls back to the prior tape_score if det_score not set (keeps
+        # legacy/sim pipeline backward-compatible).
+        self.tape_score = float(getattr(detected_object, "det_score", self.tape_score))
 
     # Gets our position in an array form so we can use it in the BallTree
     def getPosition(self):
@@ -173,7 +254,19 @@ class GlobalTracked:
             monitor: Whether to collect cooperative monitoring data
             participant_trust_scores: Dict mapping participant_id to trust score (for global fusion)
         """
-        self.kalman.fusion(self.match_list, time, monitor, participant_trust_scores)
+        # Measurement ordering strategy depends on covariance knowledge:
+        # - Baseline (flat R): randomize — no quality info, prevents arrival-order bias
+        # - GPEM (per-measurement R): sort by trace(R) ascending — process the
+        #   tightest measurement first for largest Kalman gain, reflecting the
+        #   practical advantage of knowing per-measurement quality
+        if self.passthrough_covariance:
+            ordered = sorted(self.match_list,
+                             key=lambda m: np.trace(m.covariance) if m.covariance is not None else float('inf'),
+                             reverse=True)
+        else:
+            ordered = list(self.match_list)
+            random.shuffle(ordered)
+        self.kalman.fusion(ordered, time, monitor, participant_trust_scores)
         self.x = self.kalman.x
         self.y = self.kalman.y
         self.error_covariance = self.kalman.error_covariance
@@ -207,6 +300,21 @@ class GlobalTracked:
                 if total_weight > 0:
                     self.angle = math.atan2(sin_sum / total_weight, cos_sum / total_weight)
 
+    def update_log_odds(self, log_lr: float) -> None:
+        """Add a clamped log-likelihood-ratio update to the existence score."""
+        self.S_t += max(-LOG_LR_CLAMP, min(LOG_LR_CLAMP, log_lr))
+
+    @property
+    def tracking_score(self) -> float:
+        """sigmoid(S_t) ∈ [0, 1] — calibrated existence probability for
+        AB3DMOT-style recall sweeps."""
+        # Stable sigmoid.
+        if self.S_t >= 0:
+            ez = math.exp(-self.S_t)
+            return 1.0 / (1.0 + ez)
+        ez = math.exp(self.S_t)
+        return ez / (1.0 + ez)
+
     def clearLastFrame(self):
         self.match_list = []
 
@@ -219,7 +327,18 @@ class Fusion:
     # This is a modified version of the frame-by-frame tracker seen in:
     # https://github.com/eandert/Jetson_Nano_Camera_Vehicle_Tracker
     def __init__(self, id, use_trust_scoring=True, passthrough_covariance=False, filter_class=None,
-                 static_matching_cov=None):
+                 static_matching_cov=None, p_tp_birth_gate=None,
+                 lifecycle_mode="legacy",
+                 confirm_log_odds=DEFAULT_CONFIRM_LOG_ODDS,
+                 kill_log_odds=DEFAULT_KILL_LOG_ODDS,
+                 log_lr_miss=DEFAULT_LOG_LR_MISS,
+                 ab3dmot_min_hits=3,
+                 ab3dmot_max_age=2,
+                 enable_inactive_preservation=False,
+                 inactive_grace_s=DEFAULT_INACTIVE_GRACE_S,
+                 mahal_weight=0.6, iou_weight=0.4, mahal_gate=13.82,
+                 iou_gate=0.0,
+                 tape_score_miss_decay=None):
         # Set other parameters for the class
         self.tracked_list = []
         self.id = id
@@ -231,6 +350,54 @@ class Fusion:
         self.passthrough_covariance = passthrough_covariance  # Pass measurement covariance directly
         self.filter_class = filter_class  # Pluggable filter; None → ResizableKalman (default)
         self.static_matching_cov = static_matching_cov  # If set, use this fixed cov for matching only
+        # Phase A: minimum P(TP) for a detection to spawn a new tentative track.
+        # None = disabled (legacy behaviour: every unmatched detection spawns).
+        # Detections without a `.p_tp` attribute are treated as P_TP=1.0
+        # (calibration unavailable → no gating, identical to current pipeline).
+        self.p_tp_birth_gate = p_tp_birth_gate
+
+        # Phase B: track-lifecycle mode.
+        #   "legacy"   — fusion_steps > trackShowThreshold (count-based, current).
+        #   "log_odds" — IPDA-style: confirm at S_t > confirm_log_odds; kill
+        #                at S_t < kill_log_odds; miss-frame decay each step.
+        #   "ab3dmot"  — V2V4Real/AB3DMOT-style: confirm after min_hits matched
+        #                frames, kill after max_age consecutive missed frames.
+        #                Hard count rules; combines well with our P(TP) birth
+        #                gate (Phase A) and tape_score-with-decay (AMOTA).
+        self.lifecycle_mode = lifecycle_mode
+        self.confirm_log_odds = confirm_log_odds
+        self.kill_log_odds    = kill_log_odds
+        self.log_lr_miss      = log_lr_miss
+        self.ab3dmot_min_hits = ab3dmot_min_hits
+        self.ab3dmot_max_age  = ab3dmot_max_age
+
+        # Phase B.5: when a track's S_t collapses below kill_log_odds, do
+        # we delete it (False, classic) or move it to an inactive state
+        # for `inactive_grace_s` seconds (True) so a Mahalanobis re-match
+        # can revive the same track ID? Inactive tracks don't emit but
+        # still appear in the matching cost matrix. Only takes effect in
+        # log_odds lifecycle mode.
+        self.enable_inactive_preservation = enable_inactive_preservation
+        self.inactive_grace_s = inactive_grace_s
+
+        # Pluggable Hungarian cost. Default = our hybrid (Mahalanobis + IoU).
+        # Setting mahal_weight=0, iou_weight=1 reproduces AB3DMOT's pure-IoU
+        # matching. Setting mahal_weight=1, iou_weight=0 gives pure
+        # Mahalanobis. mahal_gate is the chi² gate on Mahalanobis distance
+        # (13.82 = 99.9% / 2 DOF); set to a large value to effectively
+        # disable the Mahalanobis gate (useful when iou_weight=1).
+        self.mahal_weight = float(mahal_weight)
+        self.iou_weight   = float(iou_weight)
+        self.mahal_gate   = float(mahal_gate)
+        self.iou_gate     = float(iou_gate)
+
+        # Per-frame multiplicative tape_score decay applied to coasting tracks.
+        # 1.0 = no decay (matches AB3DMOT's "score persists across coast"
+        # behaviour). Lower = faster decay. None falls back to module default.
+        self.tape_score_miss_decay = (
+            float(tape_score_miss_decay) if tape_score_miss_decay is not None
+            else TAPE_SCORE_MISS_DECAY
+        )
         
         # Trust scoring: per-participant trust scores (default 1.0 = fully trusted)
         # Key: participant_id (extracted from vehicle_id // max_id)
@@ -265,6 +432,42 @@ class Fusion:
         trupercept_monitoring = []
         detected_objects = []  # New list to store DetectedObject instances
 
+        # Per-frame miss handling, applied once per fused frame BEFORE the
+        # kill check / output. A track is "missed in this frame" iff its
+        # last_measurement is strictly before the current frame's timestamp.
+        for track in self.tracked_list:
+            if track.last_measurement < time:
+                # Tape-score decay (per-Fusion-instance knob; default 1.0 =
+                # no decay, matches AB3DMOT). Lower values demote stale
+                # tracks down the AMOTA recall sort.
+                track.tape_score *= self.tape_score_miss_decay
+                # AB3DMOT-style miss counter
+                track.misses_since_match += 1
+                # Phase B: log-odds miss-evidence accumulation.
+                if self.lifecycle_mode == "log_odds":
+                    track.update_log_odds(self.log_lr_miss)
+        if self.lifecycle_mode == "log_odds":
+            survivors = []
+            for t in self.tracked_list:
+                if t.S_t >= self.kill_log_odds:
+                    survivors.append(t)
+                else:
+                    # S_t collapsed. Either delete (preservation off) or
+                    # park in inactive state (preservation on, log_odds only).
+                    if self.enable_inactive_preservation:
+                        if not t.is_inactive:
+                            t.is_inactive = True
+                            t.inactive_since = time
+                        # Drop only if grace has expired
+                        if (time - (t.inactive_since or time)) <= self.inactive_grace_s:
+                            survivors.append(t)
+            self.tracked_list = survivors
+        elif self.lifecycle_mode == "ab3dmot":
+            self.tracked_list = [
+                t for t in self.tracked_list
+                if t.misses_since_match < self.ab3dmot_max_age
+            ]
+
         # First pass: run Kalman fusion on all tracks
         for track in self.tracked_list:
             trust_scores = self.participant_trust_scores if self.use_trust_scoring else None
@@ -274,9 +477,22 @@ class Fusion:
         if len(self.tracked_list) >= 1:
             self.cleanDetections()
 
-        # Second pass: build output from surviving tracks
+        # Second pass: build output from surviving tracks.
+        # Emit gate depends on lifecycle_mode:
+        #   "legacy"   — fusion_steps > trackShowThreshold (count-based)
+        #   "log_odds" — S_t > confirm_log_odds (Bayesian existence threshold)
+        #   "ab3dmot"  — hits >= ab3dmot_min_hits  (AB3DMOT count rule)
+        # Inactive tracks (Phase B.5) never emit — they wait for revival.
         for track in self.tracked_list:
-            if track.fusion_steps > self.trackShowThreshold:
+            if track.is_inactive:
+                continue
+            if self.lifecycle_mode == "log_odds":
+                emit = track.S_t > self.confirm_log_odds
+            elif self.lifecycle_mode == "ab3dmot":
+                emit = track.hits >= self.ab3dmot_min_hits
+            else:
+                emit = track.fusion_steps > self.trackShowThreshold
+            if emit:
                 result.append([track.id, track.x, track.y, track.error_covariance.tolist(
                 ), track.dx, track.dy, track.d_covariance.tolist(), track.num_trackers])
                 if track.error_monitor:
@@ -296,6 +512,15 @@ class Fusion:
                     velocity_vector=[track.dx, track.dy]
                 )
                 detected_object.last_measurement = track.last_measurement
+                # Carry existence confidence so the next-level tracker (global fusion)
+                # can accumulate log-odds evidence correctly. Confirmed local tracks
+                # are reliable, so p_tp is the track's sigmoid(S_t) in log_odds mode
+                # (high for well-confirmed tracks) or 0.9 for count-based modes.
+                if self.lifecycle_mode == "log_odds":
+                    detected_object.p_tp = track.tracking_score
+                else:
+                    detected_object.p_tp = 0.9
+                detected_object.det_score = track.tape_score
                 detected_objects.append(detected_object)
 
                 bbox = detected_object.detected_bbox_corners
@@ -350,51 +575,80 @@ class Fusion:
             if len(self.tracked_list) > 0:
                 num_tracks = len(self.tracked_list)
                 num_detections = len(detections_list_positions)
-                
-                # Build cost matrix: rows = tracks, cols = detections
-                # Using a large finite value for "impossible" assignments (gated out)
-                # Note: scipy's linear_sum_assignment can't handle inf values
+
                 IMPOSSIBLE_COST = 1e9
                 cost_matrix = np.full((num_tracks, num_detections), IMPOSSIBLE_COST)
-                
-                # Pre-compute track predictions with covariance
-                track_predictions = []
-                for track in self.tracked_list:
-                    pred = track.getPositionPredictedWithCovariance(timestamp)
-                    track_predictions.append(pred)
-                
-                # Build cost matrix with hybrid Mahalanobis + IOU metric
-                for t_idx, (track, pred) in enumerate(zip(self.tracked_list, track_predictions)):
-                    for d_idx, det in enumerate(detection_list):
-                        det_pos = [det.centroid[0], det.centroid[1]]
-                        det_bbox = detections_list_positions[d_idx]
-                        # Use static matching cov if set, otherwise detection's own cov
-                        if self.static_matching_cov is not None:
-                            det_cov = self.static_matching_cov
-                        else:
-                            det_cov = det.error_covariance
 
-                        # Ensure det_cov is 2x2
-                        if det_cov is None or np.array(det_cov).size < 4:
-                            det_cov = np.eye(2)
-                        else:
-                            det_cov = np.array(det_cov).reshape(2, 2)
+                # Pre-compute track predictions (one Kalman prediction per track)
+                track_predictions = [
+                    track.getPositionPredictedWithCovariance(timestamp)
+                    for track in self.tracked_list
+                ]
 
-                        # Compute hybrid cost
-                        cost, mahal_dist, iou = utils.compute_hybrid_cost(
-                            detection_pos=det_pos,
-                            detection_cov=det_cov,
-                            predicted_pos=[pred['x'], pred['y']],
-                            P_pred=pred['P_pred'],
-                            det_bbox=det_bbox,
-                            pred_bbox=pred['bbox'],
-                            mahal_weight=0.6,  # Weight Mahalanobis more for far detections
-                            iou_weight=0.4,    # IOU helps when boxes overlap
-                            mahal_gate=13.82   # 99.9% chi-squared with 2 DOF
+                # --- VECTORIZED COST MATRIX ---
+                # Extract track positions and prediction covariances as arrays
+                pred_xy = np.empty((num_tracks, 2), dtype=np.float64)
+                pred_Ps = np.empty((num_tracks, 2, 2), dtype=np.float64)
+                for i, p in enumerate(track_predictions):
+                    pred_xy[i, 0] = p['x']
+                    pred_xy[i, 1] = p['y']
+                    pred_Ps[i] = p['P_pred'][0:2, 0:2]
+
+                # Pre-extract detection positions and covariances as arrays
+                det_xy = np.empty((num_detections, 2), dtype=np.float64)
+                det_covs = np.empty((num_detections, 2, 2), dtype=np.float64)
+                _eye2 = np.eye(2, dtype=np.float64)
+                for j, det in enumerate(detection_list):
+                    det_xy[j, 0] = det.centroid[0]
+                    det_xy[j, 1] = det.centroid[1]
+                    if self.static_matching_cov is not None:
+                        dc = np.asarray(self.static_matching_cov, dtype=np.float64).reshape(2, 2)
+                    elif det.error_covariance is None or np.asarray(det.error_covariance).size < 4:
+                        dc = _eye2
+                    else:
+                        dc = np.asarray(det.error_covariance, dtype=np.float64).reshape(2, 2)
+                    det_covs[j] = dc
+
+                # Batch Euclidean pre-filter: (T, D) squared-distance matrix
+                diff = pred_xy[:, np.newaxis, :] - det_xy[np.newaxis, :, :]  # (T, D, 2)
+                dist2 = (diff * diff).sum(axis=2)                              # (T, D)
+                t_near, d_near = np.where(dist2 <= 900.0)
+
+                if len(t_near) > 0:
+                    # Batch innovation covariance S = P_pred[t] + R[d]
+                    S_batch = pred_Ps[t_near] + det_covs[d_near]  # (N, 2, 2)
+                    S_batch[:, 0, 0] += 1e-8
+                    S_batch[:, 1, 1] += 1e-8
+                    # Analytic batch 2×2 inverse (avoids LAPACK overhead)
+                    S_inv_batch = utils.inv2x2(S_batch)           # (N, 2, 2)
+
+                    # Batch Mahalanobis: d²[n] = diffs[n] @ S_inv[n] @ diffs[n]
+                    diffs = diff[t_near, d_near]                   # (N, 2)
+                    tmp = np.einsum('nij,nj->ni', S_inv_batch, diffs)
+                    mahal = np.sqrt(np.maximum(0.0, (diffs * tmp).sum(axis=1)))  # (N,)
+
+                    # Fill cost for pairs passing the Mahalanobis gate
+                    # IoU (expensive Sutherland-Hodgman) only runs on this small subset
+                    gate_k = np.where(mahal <= self.mahal_gate)[0]
+                    for k in gate_k:
+                        t_idx = int(t_near[k])
+                        d_idx = int(d_near[k])
+                        m = float(mahal[k])
+
+                        if self.iou_weight > 0:
+                            iou = utils.rotated_box_iou(
+                                detections_list_positions[d_idx],
+                                track_predictions[t_idx]['bbox'])
+                            if self.iou_gate > 0.0 and iou < self.iou_gate:
+                                continue
+                        else:
+                            iou = 0.0
+
+                        cost_matrix[t_idx, d_idx] = (
+                            self.mahal_weight * (m / self.mahal_gate) +
+                            self.iou_weight * (1.0 - iou)
                         )
-                        
-                        cost_matrix[t_idx, d_idx] = cost
-                
+
                 # Run Hungarian algorithm for optimal assignment
                 row_ind, col_ind = linear_sum_assignment(cost_matrix)
                 
@@ -405,15 +659,36 @@ class Fusion:
                 for t_idx, d_idx in zip(row_ind, col_ind):
                     if cost_matrix[t_idx, d_idx] < IMPOSSIBLE_COST:
                         # Valid match
-                        self.tracked_list[t_idx].update(detection_list[d_idx], timestamp)
+                        det = detection_list[d_idx]
+                        track = self.tracked_list[t_idx]
+                        track.update(det, timestamp)
+                        # Phase B: log-odds match-evidence update.
+                        if self.lifecycle_mode == "log_odds":
+                            track.update_log_odds(_logit(getattr(det, "p_tp", 0.5)))
+                            # Phase B.5: revive an inactive track that just
+                            # got matched. Same ID restored; bump S_t back
+                            # above confirm threshold so the track re-emits
+                            # immediately rather than re-accumulating from 0.
+                            if track.is_inactive:
+                                track.is_inactive = False
+                                track.inactive_since = None
+                                track.S_t = max(track.S_t, self.confirm_log_odds + 0.5)
+                                track.revive_count += 1
                         matched_track_indices.add(t_idx)
                         matched_det_indices.add(d_idx)
+                # Note: per-frame miss decay is applied in fuseDetectionFrame,
+                # not here — matchDetections runs per-ego, but a track is
+                # "missed in this frame" only if no ego observed it.
                 
-                # Create new tracks for unmatched detections
+                # Create new tracks for unmatched detections (Phase A gate).
                 for d_idx in range(num_detections):
                     if d_idx not in matched_det_indices:
+                        det = detection_list[d_idx]
+                        if self.p_tp_birth_gate is not None and \
+                           getattr(det, "p_tp", 1.0) < self.p_tp_birth_gate:
+                            continue
                         new = GlobalTracked(
-                            detection_list[d_idx],
+                            det,
                             timestamp,
                             (max_id * self.id) + self.current_track_id,
                             self.fusion_mode,
@@ -428,8 +703,11 @@ class Fusion:
                         self.tracked_list.append(new)
 
             else:
-                # If there are no existing tracks, create new tracks for all detections
+                # No existing tracks: spawn for each detection (Phase A gate).
                 for dl in detection_list:
+                    if self.p_tp_birth_gate is not None and \
+                       getattr(dl, "p_tp", 1.0) < self.p_tp_birth_gate:
+                        continue
                     new = GlobalTracked(dl, timestamp, (max_id * self.id) + self.current_track_id, self.fusion_mode,
                                         use_trust_scoring=self.use_trust_scoring,
                                         passthrough_covariance=self.passthrough_covariance,
@@ -440,11 +718,22 @@ class Fusion:
                         self.current_track_id = 0
                     self.tracked_list.append(new)
 
-        # Clean up old tracks
+        # Clean up old tracks. Stale-time deletion always applies UNLESS the
+        # track is currently inactive (Phase B.5 owns that lifetime — its
+        # grace period takes precedence over `cleanupTime` once a track
+        # has been parked). Log-odds kill is gated on B.5 being OFF; when
+        # B.5 is on, the kill→inactive transition is handled exclusively
+        # in fuseDetectionFrame.
         remove = []
         for idx, track in enumerate(self.tracked_list):
             track.relations = []
+            if track.is_inactive:
+                continue
             if track.last_measurement <= (timestamp - cleanupTime):
+                remove.append(idx)
+            elif self.lifecycle_mode == "log_odds" and \
+                 not self.enable_inactive_preservation and \
+                 track.S_t < self.kill_log_odds:
                 remove.append(idx)
 
         for delete in reversed(remove):
@@ -468,15 +757,33 @@ class Fusion:
         
         for i in range(num_tracks):
             track_i = self.tracked_list[i]
-            # Get position with covariance inflation
-            a_i, b_i, _ = utils.ellipsify(track_i.error_covariance, 2.0)
-            bbox_i = [track_i.x, track_i.y, track_i.width + a_i, track_i.length + b_i, track_i.angle]
-            
+            # Inactive tracks (Phase B.5) don't participate in the merge pool —
+            # their position is stale and they're already not emitting.
+            if track_i.is_inactive:
+                continue
+            xi, yi = track_i.x, track_i.y
+            # Lazy-compute bbox_i: deferred until a nearby candidate is found
+            bbox_i = None
+
             for j in range(i + 1, num_tracks):
                 track_j = self.tracked_list[j]
+                if track_j.is_inactive:
+                    continue
+                # Fast Euclidean pre-filter: skip expensive polygon/Mahalanobis ops for
+                # clearly distant pairs. 15m covers max Mahalanobis<4.0 with σ≤2.5m tracks.
+                dx = track_j.x - xi
+                dy = track_j.y - yi
+                if dx * dx + dy * dy > 225.0:
+                    continue
+
+                # Lazy-init bbox_i on first nearby candidate
+                if bbox_i is None:
+                    a_i, b_i, _ = utils.ellipsify(track_i.error_covariance, 2.0)
+                    bbox_i = [xi, yi, track_i.width + a_i, track_i.length + b_i, track_i.angle]
+
                 a_j, b_j, _ = utils.ellipsify(track_j.error_covariance, 2.0)
                 bbox_j = [track_j.x, track_j.y, track_j.width + a_j, track_j.length + b_j, track_j.angle]
-                
+
                 # Compute IOU
                 iou = utils.rotated_box_iou(bbox_i, bbox_j)
                 
@@ -511,15 +818,31 @@ class Fusion:
             track_i = self.tracked_list[i]
             track_j = self.tracked_list[j]
             
-            # Only merge if at least one track is established
-            if track_i.fusion_steps < self.trackShowThreshold and track_j.fusion_steps < self.trackShowThreshold:
+            # Only merge if at least one track is established. Establishment
+            # rule depends on lifecycle_mode.
+            if self.lifecycle_mode == "log_odds":
+                est_i = track_i.S_t > self.confirm_log_odds
+                est_j = track_j.S_t > self.confirm_log_odds
+            elif self.lifecycle_mode == "ab3dmot":
+                est_i = track_i.hits >= self.ab3dmot_min_hits
+                est_j = track_j.hits >= self.ab3dmot_min_hits
+            else:
+                est_i = track_i.fusion_steps >= self.trackShowThreshold
+                est_j = track_j.fusion_steps >= self.trackShowThreshold
+            if not est_i and not est_j:
                 continue
-            
-            # Keep the track with more history (more fusion steps)
-            # Tiebreaker: more recent last_measurement
-            if track_i.fusion_steps > track_j.fusion_steps:
+
+            # Keep the more confident track. Confidence = S_t in log_odds, hits
+            # in ab3dmot, fusion_steps in legacy. Tiebreaker: most recent.
+            if self.lifecycle_mode == "log_odds":
+                key_i, key_j = track_i.S_t, track_j.S_t
+            elif self.lifecycle_mode == "ab3dmot":
+                key_i, key_j = track_i.hits, track_j.hits
+            else:
+                key_i, key_j = track_i.fusion_steps, track_j.fusion_steps
+            if key_i > key_j:
                 remove_set.add(j)
-            elif track_j.fusion_steps > track_i.fusion_steps:
+            elif key_j > key_i:
                 remove_set.add(i)
             elif track_i.last_measurement >= track_j.last_measurement:
                 remove_set.add(j)

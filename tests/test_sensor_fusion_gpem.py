@@ -68,7 +68,7 @@ class TestFirstFrameAverageCovariance(unittest.TestCase):
             err_msg="Cov(mean) for 3 iid should be Sigma/3")
 
     def test_different_covariances_formula(self):
-        """Cov(mean) = (1/N) * mean(Sigma_i) as implemented."""
+        """Cov(fused) = (sum P_i^-1)^-1 (precision-weighted fusion)."""
         kf = ResizableKalman(time=0.0, x=0.0, y=0.0, fusion_mode=0)
         s1 = np.array([[0.2, 0.0], [0.0, 0.2]])
         s2 = np.array([[0.4, 0.0], [0.0, 0.4]])
@@ -78,10 +78,10 @@ class TestFirstFrameAverageCovariance(unittest.TestCase):
         m3 = MatchClass(3, 0.0, 0.0, s3, 0, 0, 1.0, 1.0, 1.0, 0, 0.0, 2.0, 4.0, 0.0)
         kf.addFrames([m1, m2, m3])
         mu, c = kf.averageMeasurementsFirstFrame()
-        mean_sigma = (s1 + s2 + s3) / 3.0
-        expected_cov = mean_sigma / 3.0  # (1/N)*mean(Sigma_i)
+        # Precision-weighted: P_fused = (P1^-1 + P2^-1 + P3^-1)^-1
+        expected_cov = np.linalg.inv(np.linalg.inv(s1) + np.linalg.inv(s2) + np.linalg.inv(s3))
         np.testing.assert_array_almost_equal(c, expected_cov,
-            err_msg="Cov(mean) = (1/N)*mean(Sigma_i)")
+            err_msg="Cov(fused) = (sum P_i^-1)^-1")
 
 
 # -----------------------------------------------------------------------------

@@ -2,196 +2,299 @@
 """
 Import localizer evaluation data from pre-computed binned CSVs.
 
-Reads velocity-binned error statistics (mean, std per 2 m/s bin) and produces:
-1. Regression coefficients CSV — regressions fit on bin stds directly (not MAE)
-2. Velocity-binned distributions CSV — for error sampling and std-from-bins
+Reads velocity-binned error statistics and regression models, producing:
+1. Regression coefficients CSV — MAE, std, variance, bias regressions
+2. Velocity-binned distributions CSV — for error sampling
 
 Usage:
-    python import_localizer_binned.py <binned_csv> <output_name>
+    python import_localizer_binned.py <binned_csv> <regression_txt> <output_name>
 
 Example:
     python import_localizer_binned.py \
         path/to/hd_map_kiss_binned_errors.csv \
+        path/to/hd_map_kiss_regression_models.txt \
         kiss_icp
 """
 
+import re
 import sys
+import csv
+import math
 import numpy as np
-import pandas as pd
 from pathlib import Path
 
 # Output directory
 OUTPUT_DIR = Path(__file__).parent.parent / "src" / "data" / "sensor_models"
 
-# Error types to process (column prefix in binned CSV -> output name)
+# Error types to process
 ERROR_TYPES = {
-    'longitudinal': 'longitudinal',
-    'lateral': 'lateral',
-    'vertical': 'vertical',
-    'roll': 'roll',
-    'pitch': 'pitch',
-    'yaw': 'yaw',
-}
-
-UNITS = {
-    'longitudinal': 'meters',
-    'lateral': 'meters',
-    'vertical': 'meters',
-    'roll': 'radians',
-    'pitch': 'radians',
-    'yaw': 'radians',
-}
-
-NOTES = {
-    'longitudinal': 'Longitudinal (forward) position error',
-    'lateral': 'Lateral (side) position error',
-    'vertical': 'Vertical (up/down) position error',
-    'roll': 'Roll angle error',
-    'pitch': 'Pitch angle error',
-    'yaw': 'Yaw angle error',
+    'longitudinal': ('longitudinal', 'meters', 'Longitudinal (forward) position error'),
+    'lateral': ('lateral', 'meters', 'Lateral (side) position error'),
+    'vertical': ('vertical', 'meters', 'Vertical (up/down) position error'),
+    'roll': ('roll', 'radians', 'Roll angle error'),
+    'pitch': ('pitch', 'radians', 'Pitch angle error'),
+    'yaw': ('yaw', 'radians', 'Yaw angle error'),
 }
 
 
-def process_binned_data(input_csv: str, output_name: str):
-    """Process pre-computed binned localizer data and generate output CSVs."""
-    print(f"Reading {input_csv}...")
-    df = pd.read_csv(input_csv)
+def parse_regression_txt(path: Path) -> dict:
+    """Parse regression_models.txt; return dict keyed by name -> coefficients.
 
-    print(f"  Loaded {len(df)} rows")
-    print(f"  Columns: {list(df.columns)}")
+    Handles:
+        name_linear:  slope * v + intercept
+        name_quadratic:  a*v^2 + b*v + c
+    """
+    text = path.read_text()
+    out = {}
 
-    # Filter out rows with count=0 or NaN
-    df = df[df['count'] > 0].copy()
-    df = df.dropna(subset=['longitudinal_std', 'lateral_std'])
-    print(f"  Valid bins: {len(df)}")
-    print(f"  Velocity range: {df['velocity_min'].min():.0f} - {df['velocity_max'].max():.0f} m/s")
+    # Linear: "name_linear:  slope * v + intercept"
+    linear_pattern = re.compile(
+        r"(\w+_linear):\s*([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s*\*\s*v\s*\+\s*([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)"
+    )
+    for m in linear_pattern.finditer(text):
+        name, slope, intercept = m.group(1), float(m.group(2)), float(m.group(3))
+        out[name] = (intercept, slope)
 
-    vel_centers = df['velocity_center'].values
+    # Quadratic: "name_quadratic:  a*v^2 + b*v + c"
+    quad_pattern = re.compile(
+        r"(\w+_quadratic):\s*([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s*\*\s*v\^2\s*\+\s*([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s*\*\s*v\s*\+\s*([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)"
+    )
+    for m in quad_pattern.finditer(text):
+        name = m.group(1)
+        a, b, c = float(m.group(2)), float(m.group(3)), float(m.group(4))
+        out[name] = (a, b, c)
 
-    # --- Regression CSV (fit on bin stds directly) ---
+    return out
+
+
+def process_binned_data(binned_csv: str, regression_txt: str, output_name: str):
+    """Process binned localizer data and regression models into CMR format."""
+    print(f"Reading binned data: {binned_csv}")
+    rows = []
+    with open(binned_csv) as f:
+        reader = csv.DictReader(f)
+        columns = reader.fieldnames
+        for row in reader:
+            try:
+                if int(row['count']) > 0 and not math.isnan(float(row['longitudinal_std'])):
+                    rows.append(row)
+            except (ValueError, KeyError):
+                continue
+    print(f"  Valid bins: {len(rows)}")
+    vel_mins = [float(r['velocity_min']) for r in rows]
+    vel_maxs = [float(r['velocity_max']) for r in rows]
+    print(f"  Velocity range: {min(vel_mins):.0f} - {max(vel_maxs):.0f} m/s")
+
+    has_bias = 'longitudinal_bias' in columns
+    print(f"  Has bias columns: {has_bias}")
+
+    # Convert to arrays for convenience
+    df = rows  # list of dicts
+
+    # Parse regression models if available
+    reg = {}
+    reg_path = Path(regression_txt)
+    if reg_path.exists():
+        print(f"Reading regressions: {regression_txt}")
+        reg = parse_regression_txt(reg_path)
+        print(f"  Found {len(reg)} regression entries")
+
+    # --- Regression CSV ---
     regression_rows = []
-    for error_type, out_name in ERROR_TYPES.items():
-        std_col = f'{error_type}_std'
-        stds = df[std_col].values
+    for error_key, (out_name, unit, notes) in ERROR_TYPES.items():
+        row = {'error_type': out_name, 'unit': unit, 'notes': notes}
 
-        # Linear regression: std = intercept + slope * velocity
-        if len(vel_centers) >= 2:
-            lin = np.polyfit(vel_centers, stds, 1)  # [slope, intercept]
-            intercept, slope = float(lin[1]), float(lin[0])
+        # MAE regression (intercept + slope * v)
+        mae_lin = reg.get(f'{error_key}_linear')
+        if mae_lin:
+            row['intercept'], row['slope'] = mae_lin
         else:
-            intercept, slope = float(np.mean(stds)), 0.0
+            # Fallback: fit from bin means
+            stds = df[f'{error_key}_mean'].values
+            vel = df['velocity_center'].values
+            if len(vel) >= 2:
+                lin = np.polyfit(vel, stds, 1)
+                row['intercept'], row['slope'] = float(lin[1]), float(lin[0])
+            else:
+                row['intercept'], row['slope'] = float(np.mean(stds)), 0.0
 
-        # Quadratic regression: std = quad_a*v^2 + quad_b*v + quad_c
-        if len(vel_centers) >= 3:
-            quad = np.polyfit(vel_centers, stds, 2)  # [a, b, c]
-            quad_a, quad_b, quad_c = float(quad[0]), float(quad[1]), float(quad[2])
+        # MAE quadratic
+        mae_quad = reg.get(f'{error_key}_quadratic')
+        if mae_quad:
+            row['quad_a'], row['quad_b'], row['quad_c'] = mae_quad
         else:
-            quad_a, quad_b, quad_c = 0.0, slope, intercept
+            row['quad_a'] = row['quad_b'] = row['quad_c'] = ''
 
-        # Compute R² for reporting
-        pred_lin = intercept + slope * vel_centers
-        ss_res = np.sum((stds - pred_lin) ** 2)
-        ss_tot = np.sum((stds - np.mean(stds)) ** 2)
-        r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
+        # Std regression
+        std_lin = reg.get(f'{error_key}_std_linear')
+        if std_lin:
+            row['std_intercept'], row['std_slope'] = std_lin
+        else:
+            row['std_intercept'] = row['std_slope'] = ''
 
-        print(f"  {out_name}: intercept={intercept:.6f}, slope={slope:.6e}, "
-              f"quad=[{quad_a:.6e}, {quad_b:.6e}, {quad_c:.6f}], R²={r2:.4f}")
+        std_quad = reg.get(f'{error_key}_std_quadratic')
+        if std_quad:
+            row['std_quad_a'], row['std_quad_b'], row['std_quad_c'] = std_quad
+        else:
+            row['std_quad_a'] = row['std_quad_b'] = row['std_quad_c'] = ''
 
-        regression_rows.append({
-            'error_type': out_name,
-            'intercept': intercept,
-            'slope': slope,
-            'quad_a': quad_a,
-            'quad_b': quad_b,
-            'quad_c': quad_c,
-            'unit': UNITS[error_type],
-            'notes': NOTES[error_type],
-        })
+        # Variance regression
+        var_lin = reg.get(f'{error_key}_var_linear')
+        if var_lin:
+            row['var_intercept'], row['var_slope'] = var_lin
+        else:
+            row['var_intercept'] = row['var_slope'] = ''
 
-    regression_df = pd.DataFrame(regression_rows)
+        var_quad = reg.get(f'{error_key}_var_quadratic')
+        if var_quad:
+            row['var_quad_a'], row['var_quad_b'], row['var_quad_c'] = var_quad
+        else:
+            row['var_quad_a'] = row['var_quad_b'] = row['var_quad_c'] = ''
+
+        # Bias regression
+        bias_lin = reg.get(f'{error_key}_bias_linear')
+        if bias_lin:
+            row['bias_intercept'], row['bias_slope'] = bias_lin
+        else:
+            row['bias_intercept'] = row['bias_slope'] = ''
+
+        bias_quad = reg.get(f'{error_key}_bias_quadratic')
+        if bias_quad:
+            row['bias_quad_a'], row['bias_quad_b'], row['bias_quad_c'] = bias_quad
+        else:
+            row['bias_quad_a'] = row['bias_quad_b'] = row['bias_quad_c'] = ''
+
+        regression_rows.append(row)
+
+        # Print summary
+        mae_i = row.get('intercept', 0)
+        mae_s = row.get('slope', 0)
+        std_i = row.get('std_intercept', '')
+        var_i = row.get('var_intercept', '')
+        bias_i = row.get('bias_intercept', '')
+        print(f"  {out_name}: MAE={mae_i:.6f}+{mae_s:.2e}*v"
+              f"  std={std_i}"
+              f"  var={var_i}"
+              f"  bias={bias_i}")
+
+    fieldnames = ["error_type", "intercept", "slope", "quad_a", "quad_b", "quad_c",
+                  "bias_intercept", "bias_slope", "bias_quad_a", "bias_quad_b", "bias_quad_c",
+                  "std_intercept", "std_slope", "std_quad_a", "std_quad_b", "std_quad_c",
+                  "var_intercept", "var_slope", "var_quad_a", "var_quad_b", "var_quad_c",
+                  "unit", "notes"]
+
     regression_path = OUTPUT_DIR / f"{output_name}.csv"
-
-    with open(regression_path, 'w') as f:
+    with open(regression_path, 'w', newline='') as f:
         f.write(f"# {output_name} Localization - Imported from binned evaluation results\n")
-        f.write("# Regressions fit on bin stds directly (std-from-bins method)\n")
-        f.write("# Linear model: std = intercept + slope * velocity\n")
-        f.write("# Quadratic model: std = quad_c + quad_b*v + quad_a*v^2\n")
-        f.write("# velocity in m/s, position errors in meters, orientation errors in radians\n")
-        f.write("\n")
-        regression_df.to_csv(f, index=False)
-    print(f"\nWrote regression coefficients to: {regression_path}")
+        f.write("# MAE linear: mae = intercept + slope * velocity\n")
+        f.write("# Std linear: std = std_intercept + std_slope * velocity\n")
+        f.write("# Var linear: var = var_intercept + var_slope * velocity\n")
+        f.write("# Bias linear: bias = bias_intercept + bias_slope * velocity\n")
+        f.write("# MSE (for R matrix) = bias^2 + variance\n")
+        f.write("# velocity in m/s, position errors in meters, orientation errors in radians\n\n")
+        w = csv.DictWriter(f, fieldnames=fieldnames)
+        w.writeheader()
+        w.writerows(regression_rows)
+    print(f"\nWrote regression CSV: {regression_path}")
 
-    # --- Distributions CSV (velocity-binned) ---
+    # --- Distributions CSV (velocity-binned, for error sampling) ---
     all_bins = []
-    for error_type, out_name in ERROR_TYPES.items():
-        mean_col = f'{error_type}_mean'
-        std_col = f'{error_type}_std'
+    for error_key, (out_name, unit, notes) in ERROR_TYPES.items():
+        if has_bias:
+            mu_col = f'{error_key}_bias'
+            sig_col = f'{error_key}_bias_std'
+        else:
+            mu_col = f'{error_key}_mean'
+            sig_col = f'{error_key}_std'
 
-        for _, row in df.iterrows():
+        for row in df:
+            try:
+                mu = float(row[mu_col])
+                sig = float(row[sig_col])
+            except (ValueError, KeyError):
+                continue
+            if math.isnan(mu) or math.isnan(sig):
+                continue
+            sig = max(sig, 1e-6)
             all_bins.append({
                 'error_type': out_name,
-                'dist_min': row['velocity_min'],
-                'dist_max': row['velocity_max'],
+                'dist_min': float(row['velocity_min']),
+                'dist_max': float(row['velocity_max']),
                 'distribution': 'normal',
-                'param1': row[mean_col],  # mean (absolute error magnitude)
-                'param2': row[std_col],   # std
+                'param1': round(mu, 6),
+                'param2': round(sig, 6),
                 'param3': '',
             })
 
-        # Overall distribution (across all velocities, weighted by count)
-        counts = df['count'].values
-        means = df[mean_col].values
-        stds_arr = df[std_col].values
-        total_count = counts.sum()
-        if total_count > 0:
-            overall_mean = np.average(means, weights=counts)
-            # Pool variances: avg_var = weighted_avg(std^2 + mean^2) - overall_mean^2
-            overall_var = np.average(stds_arr**2 + means**2, weights=counts) - overall_mean**2
-            overall_std = np.sqrt(max(0, overall_var))
+        # Overall distribution
+        counts = np.array([float(r['count']) for r in df])
+        mus = np.array([float(r.get(mu_col, 'nan')) for r in df])
+        sigs = np.array([float(r.get(sig_col, 'nan')) for r in df])
+        valid = ~(np.isnan(mus) | np.isnan(sigs))
+        if valid.sum() > 0:
+            overall_mu = np.average(mus[valid], weights=counts[valid])
+            overall_var = np.average(sigs[valid]**2 + mus[valid]**2, weights=counts[valid]) - overall_mu**2
+            overall_sig = np.sqrt(max(0, overall_var))
         else:
-            overall_mean = 0.0
-            overall_std = 0.1
+            overall_mu, overall_sig = 0.0, 0.1
 
+        max_vel = max(float(r['velocity_max']) for r in df)
         all_bins.append({
             'error_type': out_name,
             'dist_min': 0,
-            'dist_max': df['velocity_max'].max(),
+            'dist_max': max_vel,
             'distribution': 'normal',
-            'param1': overall_mean,
-            'param2': overall_std,
+            'param1': round(overall_mu, 6),
+            'param2': round(max(overall_sig, 1e-6), 6),
             'param3': '',
         })
-        print(f"  {out_name}: {len(df)} bins, overall mean={overall_mean:.6f}, std={overall_std:.6f}")
 
-    bins_df = pd.DataFrame(all_bins)
     bins_path = OUTPUT_DIR / f"{output_name}_distributions.csv"
-
-    with open(bins_path, 'w') as f:
-        f.write(f"# {output_name} Localization - Binned error distributions\n")
-        f.write("# Velocity bins in m/s, position errors in meters, orientation errors in radians\n")
-        f.write("# param1=mean (absolute error), param2=std, distribution=normal\n")
-        f.write("\n")
-        bins_df.to_csv(f, index=False)
-    print(f"Wrote velocity-binned distributions to: {bins_path}")
-
-    return regression_path, bins_path
+    with open(bins_path, 'w', newline='') as f:
+        f.write(f"# {output_name} Localization - Velocity-binned error distributions\n")
+        if has_bias:
+            f.write("# param1=bias (signed mean), param2=bias_std (spread around bias)\n")
+        else:
+            f.write("# param1=mean (absolute error), param2=std\n")
+        f.write("# velocity bins in m/s\n\n")
+        w = csv.DictWriter(f, fieldnames=['error_type', 'dist_min', 'dist_max',
+                                           'distribution', 'param1', 'param2', 'param3'])
+        w.writeheader()
+        w.writerows(all_bins)
+    print(f"Wrote distributions CSV: {bins_path}")
 
 
 def main():
     if len(sys.argv) < 3:
         print(__doc__)
+        print("\nUsage: python import_localizer_binned.py <binned_csv> <regression_txt> <output_name>")
+        print("  or:  python import_localizer_binned.py <binned_csv> <output_name>  (no regression file)")
         sys.exit(1)
 
-    input_csv = sys.argv[1]
-    output_name = sys.argv[2]
+    if len(sys.argv) == 3:
+        # Old format: just binned CSV + output name
+        binned_csv = sys.argv[1]
+        regression_txt = None
+        output_name = sys.argv[2]
+    else:
+        binned_csv = sys.argv[1]
+        regression_txt = sys.argv[2]
+        output_name = sys.argv[3]
 
-    if not Path(input_csv).exists():
-        print(f"Error: Input file not found: {input_csv}")
+    if not Path(binned_csv).exists():
+        print(f"Error: Input file not found: {binned_csv}")
         sys.exit(1)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    process_binned_data(input_csv, output_name)
+    if regression_txt and Path(regression_txt).exists():
+        process_binned_data(binned_csv, regression_txt, output_name)
+    else:
+        # Fallback: no regression file, fit from bins only
+        if regression_txt:
+            print(f"Warning: Regression file not found: {regression_txt}, fitting from bins")
+        process_binned_data(binned_csv, "/dev/null", output_name)
+
     print("\nDone!")
 
 

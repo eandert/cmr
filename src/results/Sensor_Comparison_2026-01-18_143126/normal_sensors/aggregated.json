@@ -1,0 +1,13 @@
+{
+  "config_name": "normal_sensors",
+  "num_runs": 1,
+  "avg_global_amota_mean": 0.41148670275823,
+  "avg_global_amota_std": 0,
+  "avg_cis_amota_mean": 0.6652366979336597,
+  "avg_cis_amota_std": 0,
+  "avg_cav_amota_mean": 0.5981767040821545,
+  "avg_cav_amota_std": 0,
+  "avg_perception_anomalies_mean": 0,
+  "avg_perception_anomalies_std": 0,
+  "total_anomaly_detections": 0
+}

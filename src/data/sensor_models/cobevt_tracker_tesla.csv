@@ -1,0 +1,20 @@
+# CoBEVT tracker (tesla ego)
+# MAE linear: abs_error = intercept + slope * distance
+# MAE quadratic: abs_error = quad_a * d^2 + quad_b * d + quad_c
+# Std linear: std = std_intercept + std_slope * distance
+# Std quadratic: std = std_quad_a * d^2 + std_quad_b * d + std_quad_c
+# Var linear: var = var_intercept + var_slope * distance
+# Var quadratic: var = var_quad_a * d^2 + var_quad_b * d + var_quad_c
+# Bias linear: signed_bias = bias_intercept + bias_slope * distance
+# Bias quadratic: signed_bias = bias_quad_a * d^2 + bias_quad_b * d + bias_quad_c
+# MSE (for R matrix) = bias^2 + variance (bias-variance decomposition)
+
+error_type,intercept,slope,quad_a,quad_b,quad_c,bias_intercept,bias_slope,bias_quad_a,bias_quad_b,bias_quad_c,std_intercept,std_slope,std_quad_a,std_quad_b,std_quad_c,var_intercept,var_slope,var_quad_a,var_quad_b,var_quad_c,unit,notes
+radial,0.12186,0.001234,-2.092802e-05,0.002607781,0.1048319,-0.018268,0.000422,1.283933e-05,-0.0004205729,-0.007821327,0.191999,0.000503,-2.033634e-05,0.002536281,0.1579358,0.037417,0.000208,-8.34866e-06,0.001043309,0.02343334,meters,Range error
+lateral,0.095446,0.000578,8.203207e-06,3.968251e-05,0.1021204,-0.00507,0.000736,-3.00609e-05,0.002708597,-0.0295293,0.157044,6.7e-05,-1.535857e-05,0.001602716,0.1313185,0.024782,2.8e-05,-4.516797e-06,0.0004797509,0.01721659,meters,Cross-range error
+vertical,0.041135,0.001334,3.380329e-06,0.001111784,0.0438852,0.007198,-0.000557,-5.133836e-06,-0.0002199712,0.003020731,0.063045,0.00139,-3.940038e-06,0.001783775,0.05644517,0.000904,0.000369,6.587508e-07,0.0003031406,0.002007102,meters,Elevation error
+yaw,0.023302,0.000573,-1.691627e-06,0.0006840775,0.02192585,0.004696,-0.000154,-4.468843e-06,0.0001390267,0.001059864,0.040713,0.000456,-8.700365e-06,0.001325554,0.02614033,0.001536,5.5e-05,-9.194059e-07,0.0001466256,-4.036669e-06,radians,Heading angle
+width,0.25319,0.000454,-3.779948e-06,0.0007024358,0.2501139,-0.062068,0.000376,2.586283e-05,-0.001320744,-0.0410247,0.393335,-0.001163,-5.4421e-05,0.004279266,0.3021799,0.146546,-0.000604,-2.955105e-05,0.002350801,0.09704819,meters,Box width
+length,0.110721,-6.2e-05,5.858257e-06,-0.000446255,0.1154872,-0.032538,0.00076,-8.007446e-06,0.001285051,-0.03905335,0.136924,0.000192,1.447676e-05,-0.001255653,0.1611723,0.018596,6.2e-05,4.432021e-06,-0.0003813538,0.02601999,meters,Box length
+box_height,0.077119,0.000735,7.579449e-06,0.0002373873,0.08328658,-0.017866,-7.4e-05,-3.238494e-06,0.0001382182,-0.02050137,0.10747,0.000876,-3.899291e-06,0.001265663,0.100939,0.010418,0.000264,-6.814575e-07,0.0003324909,0.009276274,meters,Box height
+miss_rate,0.108122,0.002683,-2.819376e-06,0.002966105,0.1030587,,,,,,,,,,,,,,,,probability,Miss rate
