@@ -125,13 +125,13 @@ _DMSTRACK_GPEM_TRACKING_DIR = Path(
 # dump_tracks_to_kitti_mot.py (Tier 1.5 auto-lifecycle, sabre_static stream).
 # Lets us run our tracker through the same precomputed_tracks pipeline that
 # gives us apples-to-apples Paper AMOTA vs DMSTrack and CoBEVT+AB3DMOT.
-_OUR_COBEVT_TRACKING_DIR = Path(
-    "/home/rave/test/cmr/results/V2V4Real_OUR_COBEVT_KITTI_DUMP_2026-05-15_200158/data_0")
+_OUR_COBEVT_TRACKING_DIR = (
+    REPO / "results" / "V2V4Real_OUR_COBEVT_KITTI_DUMP_2026-05-15_200158" / "data_0")
 
 # Mixed-detector auto-tune KITTI dumps from 2026-05-15_233657 (overnight).
 # Each is a per-config tracker output ready to run through the precomputed_tracks
 # evaluator for apples-to-apples Paper AMOTA + HOTA vs DMSTrack baseline.
-_OUR_DUMP_BASE = Path("/home/rave/test/cmr/results")
+_OUR_DUMP_BASE = REPO / "results"
 _OUR_DUMPS = {
     'cp_zeroshot':        _OUR_DUMP_BASE / 'V2V4Real_KITTI_DUMP_cp_zeroshot_dd_lc_static_2026-05-15_233657'        / 'data_0',
     'cpft_pervehicle':    _OUR_DUMP_BASE / 'V2V4Real_KITTI_DUMP_cpft_pervehicle_dd_ab_static_2026-05-15_233657'    / 'data_0',
