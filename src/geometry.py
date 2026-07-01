@@ -160,6 +160,15 @@ def get_rotated_box_corners(cx: float, cy: float, w: float, h: float, angle: flo
 
     Convention: w=width (perpendicular to heading), h=length (along heading).
     At angle=0, length (h) is along x-axis, width (w) is along y-axis.
+
+    NOTE: rotation matrix uses NEGATED yaw to match AB3DMOT's roty() in
+    AB3DMOT_libs/kitti_oxts.py, which is a 3D rotation about the camera-Y
+    (DOWN) axis. Projected to the XZ BEV plane, that rotation has the
+    opposite sign vs the standard counter-clockwise 2D rotation matrix.
+    Without this negation, our 3D-IoU disagrees with AB3DMOT by up to
+    ~0.2 at non-zero yaw, costing ~1.7-3 V2V-AMOTA on real data
+    (DMSTrack-paper-protocol mismatch). Locked by
+    tests/test_scoring_pipeline.py::test_3d_iou_matches_ab3dmot.
     """
     cos_a = np.cos(angle)
     sin_a = np.sin(angle)
@@ -171,7 +180,8 @@ def get_rotated_box_corners(cx: float, cy: float, w: float, h: float, angle: flo
         [hh, hw],
         [-hh, hw],
     ])
-    rot = np.array([[cos_a, -sin_a], [sin_a, cos_a]])
+    # Negated yaw to match AB3DMOT's roty() convention (cam-Y is DOWN).
+    rot = np.array([[cos_a, sin_a], [-sin_a, cos_a]])
     return corners_rel @ rot.T + np.array([cx, cy])
 
 

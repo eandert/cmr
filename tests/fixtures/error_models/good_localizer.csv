@@ -1,0 +1,8 @@
+# Good localizer regression (velocity-parameterized).
+error_type,intercept,slope,quad_a,quad_b,quad_c,bias_intercept,bias_slope,bias_quad_a,bias_quad_b,bias_quad_c,std_intercept,std_slope,std_quad_a,std_quad_b,std_quad_c,var_intercept,var_slope,var_quad_a,var_quad_b,var_quad_c,unit,notes
+longitudinal,0.025,0.001,0.00001,0.0008,0.025,0.0,0.0,0.0,0.0,0.0,0.04,0.0015,0.000015,0.0012,0.04,0.0016,0.0001,0.000001,0.00008,0.0016,meters,Longitudinal drift
+lateral,0.025,0.001,0.00001,0.0008,0.025,0.0,0.0,0.0,0.0,0.0,0.04,0.0015,0.000015,0.0012,0.04,0.0016,0.0001,0.000001,0.00008,0.0016,meters,Lateral drift
+vertical,0.01,0.0005,5e-6,0.0004,0.01,0.0,0.0,0.0,0.0,0.0,0.02,0.001,0.00001,0.0008,0.02,0.0004,5e-5,5e-7,4e-5,0.0004,meters,Vertical drift
+roll,0.005,0.0001,1e-6,8e-5,0.005,0.0,0.0,0.0,0.0,0.0,0.008,0.00015,1.5e-6,0.00012,0.008,6e-5,1e-5,1e-7,8e-6,6e-5,radians,Roll drift
+pitch,0.005,0.0001,1e-6,8e-5,0.005,0.0,0.0,0.0,0.0,0.0,0.008,0.00015,1.5e-6,0.00012,0.008,6e-5,1e-5,1e-7,8e-6,6e-5,radians,Pitch drift
+yaw,0.01,0.0005,5e-6,0.0004,0.01,0.0,0.0,0.0,0.0,0.0,0.02,0.001,0.00001,0.0008,0.02,0.0004,5e-5,5e-7,4e-5,0.0004,radians,Yaw drift

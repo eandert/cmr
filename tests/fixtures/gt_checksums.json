@@ -1,0 +1,16 @@
+{
+  "checksums": {
+    "0000.txt": "ccd407835025aaffc607a55de64233b8483f089c56cff2f3fdeb5b7f44a182c9",
+    "0001.txt": "b44e37a17727b7b8fa237157c23a03f16ba6d46afe68fada6ede907a1250d901",
+    "0002.txt": "92f6922ea97ee31e52cfa3d25dd72fd2db36494fbb496bf8abd6e1f2891a56f5",
+    "0003.txt": "d63c88df66d28dff1adb1b6fdf38221df26f081f23f8eff98b556538db0d99dd",
+    "0004.txt": "7e3721e572753677fa49acf86592342a6dafe7c6a66aa15f04ab474d48a8c71f",
+    "0005.txt": "3998e89a7285ea6d87bd39b94552803e8ce2bd19f7373532baf6ee2682ee051e",
+    "0006.txt": "c96e71c66f8b4f4928d5480ae50cb4357c70a9780fad49d881ad233fc90a40c8",
+    "0007.txt": "edadc789021ffd28bc9231547c711c3c92182e70c42228cfe712e19202ef9f13",
+    "0008.txt": "40a6fdd9958e0a0b1f68d9205dc2e1c0264a1566f1afdb4098d445ffd0c2e9db"
+  },
+  "invariant_problems": [],
+  "invariants_clean": true,
+  "label_dir": "baselines/paper_gt/kitti_labels"
+}

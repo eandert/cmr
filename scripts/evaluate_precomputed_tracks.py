@@ -25,7 +25,7 @@ For DMSTrack's differentiable KF output (true KITTI camera frame):
 Usage:
     python scripts/evaluate_precomputed_tracks.py \\
         --tracking-dir /path/to/tracking/data \\
-        --gt-dir /home/rave/test/DMSTrack/AB3DMOT/scripts/KITTI/v2v4real_val_label \\
+        --gt-dir data/v2v4real_inputs/baselines/paper_gt/kitti_labels/v2v4real_val_label \\
         --label "CoBEVT+AB3DMOT (official)"
 """
 from __future__ import annotations
@@ -46,7 +46,7 @@ from metrics.v2v4real_metrics import (
     compute_hota_iou,
 )
 
-GT_DIR_DEFAULT = Path("/home/rave/test/DMSTrack/AB3DMOT/scripts/KITTI/v2v4real_val_label")
+GT_DIR_DEFAULT = REPO / "data" / "v2v4real_inputs" / "baselines" / "paper_gt" / "kitti_labels"
 
 
 def parse_kitti_gt(path: Path) -> Dict[int, List[Tuple]]:
@@ -206,12 +206,19 @@ def run_global(
     match_3d: bool = False,
     convex_hull: bool = False,
     ab3dmot_rematching: bool = False,
-) -> Tuple[Dict, int]:
-    """Global AB3DMOT-exact evaluation: all sequences combined into one tape.
+    state_mode: str = "clean",
+) -> Tuple[Dict, Dict, int]:
+    """Global evaluation: all sequences combined into one tape.
 
-    Matches the official DMSTrack/AB3DMOT evaluator which accumulates TP/FP/FN
-    across all sequences before the recall sweep.  With ab3dmot_rematching=True
-    and match_3d=True this reproduces the paper's 37.16 AMOTA within ~0.1.
+    Returns (std_metrics, v2v_metrics, gt_count) where:
+      - std_metrics: FPs counted (honest Paper AMOTA, world-merged-GT view).
+        This is the strict metric — every unmatched tracker entry penalises.
+      - v2v_metrics: unmatched FPs ignored (V2V4Real / DMSTrack protocol).
+        With ab3dmot_rematching=True + match_3d=True this reproduces the
+        published 37.16 (AB3DMOT) / 43.52 (DMSTrack) within ~0.1.
+
+    Both are computed from the same combined-tape — only the FP-handling
+    differs. This gives us both protocols in one pass.
     """
     combined_tape = []
     gt_count = 0
@@ -227,12 +234,33 @@ def run_global(
         combined_tape.extend(build_per_frame_tape(g_tracks, g_gts))
         gt_count += sum(len(v) for v in gts.values())
 
+    std_m = compute_ab3dmot_metrics_iou(
+        combined_tape, iou_threshold=iou_threshold, ignore_unmatched_fps=False,
+        match_3d=match_3d, convex_hull=convex_hull,
+        use_track_avg_score=True, ab3dmot_rematching=ab3dmot_rematching,
+    )
     v2v_m = compute_ab3dmot_metrics_iou(
         combined_tape, iou_threshold=iou_threshold, ignore_unmatched_fps=True,
         match_3d=match_3d, convex_hull=convex_hull,
         use_track_avg_score=True, ab3dmot_rematching=ab3dmot_rematching,
+        state_mode=state_mode,
     )
-    return v2v_m, gt_count
+    # World-merged-GT HOTA — same combined-tape; honest world-frame association
+    # quality. Stored alongside AMOTA so the DMSTrack head-to-head has both
+    # protocols on apples-to-apples merged GT.
+    std_h = compute_hota_iou(
+        combined_tape, iou_threshold=iou_threshold, ignore_unmatched_fps=False,
+        match_3d=match_3d, convex_hull=convex_hull,
+    )
+    v2v_h = compute_hota_iou(
+        combined_tape, iou_threshold=iou_threshold, ignore_unmatched_fps=True,
+        match_3d=match_3d, convex_hull=convex_hull,
+    )
+    # Merge HOTA fields into the AMOTA dicts for caller convenience.
+    for k in ("hota", "deta", "assa", "loca"):
+        std_m[f"global_{k}"] = std_h.get(k, 0.0)
+        v2v_m[f"global_{k}"] = v2v_h.get(k, 0.0)
+    return std_m, v2v_m, gt_count
 
 
 def main():
@@ -312,6 +340,16 @@ def main():
              "matching AB3DMOT's multi-sequence accumulation. Use with --ab3dmot-rematching "
              "and --match-3d to reproduce the paper's reported numbers.",
     )
+    ap.add_argument(
+        "--state-mode",
+        choices=["clean", "paper_compat"],
+        default="clean",
+        help="V2V FP treatment. 'clean' ignores all unmatched (lenient). "
+             "'paper_compat' reproduces DMSTrack/KITTI's valid-state-leak min-height "
+             "bug: an unmatched track is counted as FP iff it was matched at a "
+             "higher-confidence recall threshold (reproduces published 43.52). "
+             "Requires --ab3dmot-rematching --global-eval.",
+    )
     args = ap.parse_args()
 
     if args.sequences:
@@ -339,18 +377,18 @@ def main():
 
     if args.global_eval:
         print("=== Global evaluation (all sequences combined, AB3DMOT protocol) ===")
-        v2v_global, total_gt = run_global(
+        std_global, v2v_global, total_gt = run_global(
             scen_ids, args.tracking_dir, args.gt_dir, args.camera_frame, args.iou_threshold,
             match_3d=args.match_3d, convex_hull=args.convex_hull,
-            ab3dmot_rematching=args.ab3dmot_rematching,
+            ab3dmot_rematching=args.ab3dmot_rematching, state_mode=args.state_mode,
         )
         print(f"  GT boxes     : {total_gt}")
         print()
-        print(f"  {'Metric':<10s}  {'V2V4_protocol':>15s}")
-        print(f"  {'AMOTA':<10s}  {v2v_global['amota']*100:>15.2f}")
-        print(f"  {'sAMOTA':<10s}  {v2v_global['samota']*100:>15.2f}")
-        print(f"  {'AMOTP':<10s}  {v2v_global['amotp']*100:>15.2f}")
-        print(f"  {'MOTA':<10s}  {v2v_global['mota']*100:>15.2f}")
+        print(f"  {'Metric':<10s}  {'std (FPs counted)':>20s}  {'V2V4 (FP-ignore)':>20s}")
+        print(f"  {'AMOTA':<10s}  {std_global['amota']*100:>20.2f}  {v2v_global['amota']*100:>20.2f}")
+        print(f"  {'sAMOTA':<10s}  {std_global['samota']*100:>20.2f}  {v2v_global['samota']*100:>20.2f}")
+        print(f"  {'AMOTP':<10s}  {std_global['amotp']*100:>20.2f}  {v2v_global['amotp']*100:>20.2f}")
+        print(f"  {'MOTA':<10s}  {std_global['mota']*100:>20.2f}  {v2v_global['mota']*100:>20.2f}")
         print()
         print("Reference — DMSTrack paper (CoBEVT+AB3DMOT): AMOTA=37.16  sAMOTA=84.54  MOTA=84.14")
         return

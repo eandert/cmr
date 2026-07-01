@@ -39,7 +39,7 @@ from metrics.v2v4real_metrics import (
     compute_ab3dmot_metrics_iou,
 )
 
-DMSTRACK_ROOT = Path("/home/rave/test/DMSTrack")
+DMSTRACK_ROOT = (REPO / "third_party" / "AB3DMOT").resolve().parent
 DEFAULT_DET_DIR = DMSTRACK_ROOT / "AB3DMOT/data/v2v4real/detection/late_fusion_Car_val"
 GT_DIR          = DMSTRACK_ROOT / "AB3DMOT/scripts/KITTI/v2v4real_val_label"
 DET_DIR = DEFAULT_DET_DIR  # overridden in main()

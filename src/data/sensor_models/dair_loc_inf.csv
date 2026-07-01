@@ -1,0 +1,37 @@
+# dair_loc_inf - DAIR-V2X-Seq infrastructure (roadside) localizer error model.
+#
+# Characterizes the SPD infrastructure source's localization error in the
+# NO-ORACLE regime: the inf<->veh calibration `system_error_offset` that DAIR
+# corrects with a manual annotation is here LEFT UNCORRECTED (deployment-realistic),
+# so the inf detections carry that error. Fit on the TRAIN split (46 seqs / 7445
+# frames; train mean ~= val mean) as an Ornstein-Uhlenbeck process — the offset
+# drifts within a scene (lag-1 autocorr ~0.88, within-scene variance dominates),
+# exactly the persistent drift SABRE was built to absorb by inflating R.
+# delta_z == 0 in the annotations, so the error is purely horizontal (z is the
+# separate L2 problem; vertical stays at the RTK floor here).
+#
+# CONSUMPTION (static covariance, the run path): get_localization_covariance reads
+# the std (spread) columns -> loc_cov = diag(std_long^2, std_lat^2) rotated by yaw,
+# added to perception covariance per Eq. 18. SABRE down-weights inf in fusion
+# (loc_cov ~24x the veh total covariance) so co-observed objects collapse onto the
+# well-localized vehicle box instead of spawning duplicate / FP tracks.
+#
+# std_*   = total localization spread (within-scene drift + between-scene): the
+#           2nd central moment, the honest measurement covariance. THIS is what
+#           the static path consumes.
+# bias_*  = the characterized systematic offset, recorded for PROVENANCE and for
+#           a future GPEM-mode (bias^2 + variance) consumer. It is NOT applied as
+#           a correction (no oracle) and is NOT added to loc_cov in the static
+#           path. (If a run ever needs the offset folded into R, that is the
+#           bias^2+var escalation, done via the GPEM-mode localizer, not by
+#           editing the std columns here.)
+#
+# Velocity dependence was inconclusive (inf is a static-mount calibration); a
+# constant model is used (slope / quad = 0). Position errors in meters, radians.
+error_type,intercept,slope,quad_a,quad_b,quad_c,bias_intercept,bias_slope,bias_quad_a,bias_quad_b,bias_quad_c,std_intercept,std_slope,std_quad_a,std_quad_b,std_quad_c,var_intercept,var_slope,var_quad_a,var_quad_b,var_quad_c,unit,notes
+longitudinal,0.384582,0.0,0.0,0.0,0.384582,-0.634,0.0,0.0,0.0,-0.634,0.482,0.0,0.0,0.0,0.482,0.232324,0.0,0.0,0.0,0.232324,meters,Longitudinal (forward) inf localization error (OU train fit; tau~1.1s)
+lateral,0.338302,0.0,0.0,0.0,0.338302,-0.104,0.0,0.0,0.0,-0.104,0.424,0.0,0.0,0.0,0.424,0.179776,0.0,0.0,0.0,0.179776,meters,Lateral (side) inf localization error (OU train fit; tau~0.28s)
+vertical,0.023936536824,0.0,0.0,0.0,0.023936536824,0.0,0.0,0.0,0.0,0.0,0.03,0.0,0.0,0.0,0.03,0.0009,0.0,0.0,0.0,0.0009,meters,Vertical position error (delta_z=0; RTK floor; z is L2)
+roll,0.0039894228040000005,0.0,0.0,0.0,0.0039894228040000005,0.0,0.0,0.0,0.0,0.0,0.005,0.0,0.0,0.0,0.005,2.5e-05,0.0,0.0,0.0,2.5e-05,radians,Roll angle error (RTK floor; not characterized)
+pitch,0.0039894228040000005,0.0,0.0,0.0,0.0039894228040000005,0.0,0.0,0.0,0.0,0.0,0.005,0.0,0.0,0.0,0.005,2.5e-05,0.0,0.0,0.0,2.5e-05,radians,Pitch angle error (RTK floor; not characterized)
+yaw,0.0039894228040000005,0.0,0.0,0.0,0.0039894228040000005,0.0,0.0,0.0,0.0,0.0,0.005,0.0,0.0,0.0,0.005,2.5e-05,0.0,0.0,0.0,2.5e-05,radians,Yaw angle error (RTK floor; not characterized)

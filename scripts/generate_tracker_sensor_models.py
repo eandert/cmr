@@ -25,7 +25,13 @@ from pathlib import Path
 
 import numpy as np
 
-DEFAULT_MM_ROOT = Path("/home/rave/test/mmdetection3d")
+# ── local_paths: developer-set external repos (see paths.local.yaml) ──
+import sys as _sys
+_sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+import local_paths as _LOCAL_PATHS  # noqa: E402
+
+
+DEFAULT_MM_ROOT = _LOCAL_PATHS.get("mmdet3d_root")
 
 MODELS = [
     "cobevt_tracker_astuff",

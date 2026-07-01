@@ -137,30 +137,51 @@ def _bandwidth_cost_mb(suite_config: Dict, export_dir: Optional[Path] = None) ->
     return res.get("strategy_A_MB_per_frame")
 
 
-def _best_gpem_and_baseline(
+def _all_calibrated_and_baseline(
     summary_results: Dict, filter_group: str
-) -> Tuple[Optional[Tuple[str, Dict]], Optional[Tuple[str, Dict]]]:
-    """Return (best_gpem_entry, baseline_entry) for one filter group.
+) -> Tuple[List[Tuple[str, Dict]], Optional[Tuple[str, Dict]]]:
+    """Return (all_calibrated_entries, baseline_entry) for one filter group.
 
-    best GPEM = argmax paper_per_ego_amota_mean over (lin, quad, polar).
+    all_calibrated = (static, lin, quad, polar) — emit every available mode
+    so the user can see all GPEM variants. The `static` stream uses
+    calibrated R from the polar calibration directly (no regression
+    smoothing); when polar calibration is dense, static often beats all
+    GPEM modes.
     """
     cfg = FILTER_GROUPS.get(filter_group)
     if not cfg:
-        return None, None
+        return [], None
 
     base_key = cfg["baseline"]
     base = (base_key, summary_results.get(base_key)) if base_key in summary_results else None
 
-    gpem_modes = [("lin", cfg["lin"]), ("quad", cfg["quad"]), ("polar", cfg["polar"])]
-    best: Optional[Tuple[str, Dict]] = None
-    for label, key in gpem_modes:
+    calibrated_modes = [
+        ("static", cfg.get("static")),
+        ("lin",    cfg["lin"]),
+        ("quad",   cfg["quad"]),
+        ("polar",  cfg["polar"]),
+    ]
+    out: List[Tuple[str, Dict]] = []
+    for label, key in calibrated_modes:
+        if key is None:
+            continue
         r = summary_results.get(key)
         if r is None:
             continue
-        val = r.get("paper_per_ego_amota_mean", 0.0)
-        if best is None or val > best[1].get("paper_per_ego_amota_mean", 0.0):
-            best = (label, r)
+        out.append((label, r))
 
+    return out, base
+
+
+# Backward-compat alias used by older callers; returns single best for
+# anyone who wanted the old API. New code should use _all_calibrated_and_baseline.
+def _best_gpem_and_baseline(
+    summary_results: Dict, filter_group: str
+) -> Tuple[Optional[Tuple[str, Dict]], Optional[Tuple[str, Dict]]]:
+    all_cal, base = _all_calibrated_and_baseline(summary_results, filter_group)
+    if not all_cal:
+        return None, base
+    best = max(all_cal, key=lambda x: x[1].get("paper_per_ego_amota_mean", 0.0))
     return best, base
 
 
@@ -187,7 +208,7 @@ def _row_paper(method: str, am: float, amp: float, sam: float,
     """Unified row dict for a V2V4Real paper reference row."""
     return {
         "method": method, "section": "paper",
-        "v2v_amota": am, "pe_amota": None, "mg_amota": None,
+        "v2v_amota": am, "mg_v2v_amota": None, "pe_amota": None, "mg_amota": None,
         "hota": None, "assa": None,
         "amotp": amp, "samota": sam, "mota": mota, "mt": mt, "ml": ml,
         "cost": cost, "ids": None, "gt": None,
@@ -197,15 +218,23 @@ def _row_paper(method: str, am: float, amp: float, sam: float,
 def _row_from_summary(r: Dict, method: str, section: str, cost: str) -> Dict:
     """Unified row dict from summary.json (our configs).
 
+    Four AMOTA metrics emitted (two protocols × two GT views):
+      v2v_amota    = V2V4Real protocol (FP-ignore) on per-ego doubled GT
+      mg_v2v_amota = V2V4Real protocol (FP-ignore) on merged GT (apples-to-apples
+                     with V2V4Real's published 38.77 number which uses single-instance GT)
+      pe_amota     = our paper protocol (FPs counted) on per-ego doubled GT
+      mg_amota     = our paper protocol (FPs counted) on merged GT — strictest
+
     HOTA is stored as [0,1] fraction in summary.json → multiply ×100.
     """
     hota_raw = r.get("avg_hota_mean")
     assa_raw = r.get("avg_assa_mean")
     return {
         "method": method, "section": section,
-        "v2v_amota": r.get("v2v4real_amota_mean"),
-        "pe_amota":  r.get("paper_per_ego_amota_mean"),
-        "mg_amota":  r.get("paper_amota_mean"),
+        "v2v_amota":    r.get("v2v4real_amota_mean"),
+        "mg_v2v_amota": r.get("v2v4real_mg_amota_mean"),
+        "pe_amota":     r.get("paper_per_ego_amota_mean"),
+        "mg_amota":     r.get("paper_amota_mean"),
         "hota":  hota_raw * 100.0 if hota_raw is not None else None,
         "assa":  assa_raw * 100.0 if assa_raw is not None else None,
         "amotp":  r.get("paper_per_ego_amotp_mean"),
@@ -223,13 +252,15 @@ def _row_from_protocol(r: Dict, method: str, section: str, cost: str) -> Dict:
     """Unified row dict from summary_v2v4real_protocol.json (precomputed/dmstrack).
 
     HOTA is already in percentage in protocol JSONs.
-    MG-AMOTA is n/a for single-ego approaches.
+    MG-AMOTA and MG-V2V-AMOTA are n/a for single-ego approaches (no merged-GT
+    spatial dedupe is computed by the precomputed-tracks evaluator).
     """
     return {
         "method": method, "section": section,
-        "v2v_amota": r.get("v2v4real_amota_mean"),
-        "pe_amota":  r.get("paper_per_ego_amota_mean"),
-        "mg_amota":  None,
+        "v2v_amota":    r.get("v2v4real_amota_mean"),
+        "mg_v2v_amota": None,
+        "pe_amota":     r.get("paper_per_ego_amota_mean"),
+        "mg_amota":     None,
         "hota":  r.get("hota_mean"),
         "assa":  r.get("assa_mean"),
         "amotp":  r.get("paper_per_ego_amotp_mean"),
@@ -250,7 +281,7 @@ def _row_from_protocol(r: Dict, method: str, section: str, cost: str) -> Dict:
 _W_METHOD = 30
 _ASCII_HEADER = (
     f"{'Method':<{_W_METHOD}s}  "
-    f"{'V2V-AMOTA':>10s}  {'PE-AMOTA':>8s}  {'MG-AMOTA':>8s}  "
+    f"{'V2V-AMOTA':>10s}  {'MG-V2V-AMOTA':>13s}  {'PE-AMOTA':>8s}  {'MG-AMOTA':>8s}  "
     f"{'HOTA':>7s}  {'AssA':>7s}  "
     f"{'AMOTP':>9s}  {'sAMOTA':>9s}  {'MOTA':>8s}  "
     f"{'MT':>6s}  {'ML':>6s}  {'Cost(MB)':>10s}  "
@@ -262,6 +293,7 @@ def _format_row_ascii(row: Dict) -> str:
     return (
         f"{row['method']:<{_W_METHOD}s}  "
         f"{_fv(row['v2v_amota']):>10s}  "
+        f"{_fv(row.get('mg_v2v_amota')):>13s}  "
         f"{_fv(row['pe_amota']):>8s}  "
         f"{_fv(row['mg_amota']):>8s}  "
         f"{_fv(row['hota']):>7s}  "
@@ -280,7 +312,7 @@ def _format_row_ascii(row: Dict) -> str:
 def _format_row_md(row: Dict) -> str:
     return (
         f"| {row['method']} | "
-        f"{_fv(row['v2v_amota'])} | {_fv(row['pe_amota'])} | {_fv(row['mg_amota'])} | "
+        f"{_fv(row['v2v_amota'])} | {_fv(row.get('mg_v2v_amota'))} | {_fv(row['pe_amota'])} | {_fv(row['mg_amota'])} | "
         f"{_fv(row['hota'])} | {_fv(row['assa'])} | "
         f"{_fv(row['amotp'])} | {_fv(row['samota'])} | {_fv(row['mota'])} | "
         f"{_fv(row['mt'])} | {_fv(row['ml'])} | {row['cost'] or '—'} | "
@@ -290,7 +322,7 @@ def _format_row_md(row: Dict) -> str:
 
 def _format_row_latex(row: Dict) -> str:
     return (
-        f"{row['method']} & {_fv(row['v2v_amota'])} & {_fv(row['pe_amota'])} & {_fv(row['mg_amota'])} & "
+        f"{row['method']} & {_fv(row['v2v_amota'])} & {_fv(row.get('mg_v2v_amota'))} & {_fv(row['pe_amota'])} & {_fv(row['mg_amota'])} & "
         f"{_fv(row['hota'])} & {_fv(row['assa'])} & "
         f"{_fv(row['amotp'])} & {_fv(row['samota'])} & {_fv(row['mota'])} & "
         f"{_fv(row['mt'])} & {_fv(row['ml'])} & {row['cost'] or '--'} & "
@@ -338,7 +370,7 @@ def _load_benchmark_rows(benchmark_dir: Path, split: str) -> List[Dict]:
 
 _CSV_COLS = [
     "method", "section",
-    "v2v_amota", "pe_amota", "mg_amota",
+    "v2v_amota", "mg_v2v_amota", "pe_amota", "mg_amota",
     "hota", "assa",
     "amotp", "samota", "mota", "mt", "ml",
     "cost_mb", "ids", "gt",
@@ -347,12 +379,14 @@ _CSV_COLS = [
 
 def _to_csv_row(row: Dict) -> Dict:
     """Convert unified row dict to flat CSV-ready dict."""
+    mgv2v = row.get("mg_v2v_amota")
     return {
         "method":    row["method"],
         "section":   row["section"],
-        "v2v_amota": "" if row["v2v_amota"] is None else round(float(row["v2v_amota"]), 4),
-        "pe_amota":  "" if row["pe_amota"]  is None else round(float(row["pe_amota"]),  4),
-        "mg_amota":  "" if row["mg_amota"]  is None else round(float(row["mg_amota"]),  4),
+        "v2v_amota":    "" if row["v2v_amota"] is None else round(float(row["v2v_amota"]), 4),
+        "mg_v2v_amota": "" if mgv2v is None else round(float(mgv2v), 4),
+        "pe_amota":     "" if row["pe_amota"]  is None else round(float(row["pe_amota"]),  4),
+        "mg_amota":     "" if row["mg_amota"]  is None else round(float(row["mg_amota"]),  4),
         "hota":      "" if row["hota"]      is None else round(float(row["hota"]),      4),
         "assa":      "" if row["assa"]       is None else round(float(row["assa"]),       4),
         "amotp":     "" if row["amotp"]     is None else round(float(row["amotp"]),     4),
@@ -464,15 +498,17 @@ def main():
         cost_str = f"{cost_mb:.4f}" if cost_mb is not None else "—"
 
         for fg in filter_groups:
-            best, base = _best_gpem_and_baseline(results, fg)
+            all_cal, base = _all_calibrated_and_baseline(results, fg)
             if base is not None:
                 method = f"{det_label} + {fg} (baseline)"
                 row = _row_from_summary(base[1], method, "ours", cost_str)
                 print(fmt_row(row))
                 all_rows.append(row)
-            if best is not None:
-                method = f"{det_label} + {fg} + GPEM-{best[0]}"
-                row = _row_from_summary(best[1], method, "ours", cost_str)
+            for label, entry in all_cal:
+                # Use a clear suffix per mode: static, GPEM-lin, GPEM-quad, GPEM-polar
+                suffix = "static" if label == "static" else f"GPEM-{label}"
+                method = f"{det_label} + {fg} + {suffix}"
+                row = _row_from_summary(entry, method, "ours", cost_str)
                 print(fmt_row(row))
                 all_rows.append(row)
         if args.fmt == "ascii":

@@ -1,0 +1,14 @@
+# dair_loc_veh - DAIR-V2X-Seq vehicle (ego) localizer: NovAtel RTK reference.
+# The SPD vehicle ego is RTK/INS localized (centimetre class), so its
+# localization covariance is the RTK floor (pos sigma=0.03 m, rot sigma=0.005 rad),
+# identical to rtk_v2v4real. The infrastructure source (dair_loc_inf) carries the
+# inf<->veh calibration error instead; see that file + the baton LOCALIZER block.
+# Constant std (= sigma), zero bias, no velocity dependence. Position errors in
+# meters, orientation errors in radians.
+error_type,intercept,slope,quad_a,quad_b,quad_c,bias_intercept,bias_slope,bias_quad_a,bias_quad_b,bias_quad_c,std_intercept,std_slope,std_quad_a,std_quad_b,std_quad_c,var_intercept,var_slope,var_quad_a,var_quad_b,var_quad_c,unit,notes
+longitudinal,0.023936536824,0.0,0.0,0.0,0.023936536824,0.0,0.0,0.0,0.0,0.0,0.03,0.0,0.0,0.0,0.03,0.0009,0.0,0.0,0.0,0.0009,meters,Longitudinal (forward) position error
+lateral,0.023936536824,0.0,0.0,0.0,0.023936536824,0.0,0.0,0.0,0.0,0.0,0.03,0.0,0.0,0.0,0.03,0.0009,0.0,0.0,0.0,0.0009,meters,Lateral (side) position error
+vertical,0.023936536824,0.0,0.0,0.0,0.023936536824,0.0,0.0,0.0,0.0,0.0,0.03,0.0,0.0,0.0,0.03,0.0009,0.0,0.0,0.0,0.0009,meters,Vertical (up/down) position error
+roll,0.0039894228040000005,0.0,0.0,0.0,0.0039894228040000005,0.0,0.0,0.0,0.0,0.0,0.005,0.0,0.0,0.0,0.005,2.5e-05,0.0,0.0,0.0,2.5e-05,radians,Roll angle error
+pitch,0.0039894228040000005,0.0,0.0,0.0,0.0039894228040000005,0.0,0.0,0.0,0.0,0.0,0.005,0.0,0.0,0.0,0.005,2.5e-05,0.0,0.0,0.0,2.5e-05,radians,Pitch angle error
+yaw,0.0039894228040000005,0.0,0.0,0.0,0.0039894228040000005,0.0,0.0,0.0,0.0,0.0,0.005,0.0,0.0,0.0,0.005,2.5e-05,0.0,0.0,0.0,2.5e-05,radians,Yaw angle error

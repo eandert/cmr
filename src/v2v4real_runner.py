@@ -98,6 +98,17 @@ def _split_metrics_to_run_csvs(scenario_metrics: Dict, scenario_dir: Path) -> Di
     triple_paper_pe = scenario_metrics.get("triple_paper_metrics_per_ego", {})
     triple_v2v4real = scenario_metrics.get("triple_v2v4real_protocol", {})
     triple_v2v4real_mg = scenario_metrics.get("triple_v2v4real_merged_protocol", {})
+    # Per-merge-strategy variants (sort, cav0, average) — for emitting suffixed
+    # metric fields so the user can compare GT-merge protocols side-by-side.
+    triple_paper_by_s = scenario_metrics.get("triple_paper_metrics_by_strategy", {})
+    triple_v2v4real_mg_by_s = scenario_metrics.get("triple_v2v4real_merged_protocol_by_strategy", {})
+    triple_hota_by_s = scenario_metrics.get("triple_global_hota_by_strategy", {})
+    # Full (range_mode, merge_strategy) grid — keyed by "<rm>_<s>" string.
+    # Range modes: per_ego (V2V4Real-exact) / world (cooperative gold standard
+    # using KITTI ±100×40m union of egos).
+    triple_paper_by_combo = scenario_metrics.get("triple_paper_metrics_by_combo", {})
+    triple_v2v4real_mg_by_combo = scenario_metrics.get("triple_v2v4real_merged_protocol_by_combo", {})
+    triple_hota_by_combo = scenario_metrics.get("triple_global_hota_by_combo", {})
 
     # Same canonical 30-key list used by experiment_runner.py:1125-1130.
     method_keys = [
@@ -200,6 +211,51 @@ def _split_metrics_to_run_csvs(scenario_metrics: Dict, scenario_dir: Path) -> Di
             "v2v4real_mg_gt_total": v2v_mg.get("gt_total", 0),
             "v2v4real_mg_max_recall_reached": v2v_mg.get("max_recall_reached", 0.0),
         })
+        # Full (range_mode × merge_strategy) grid: emit per-combo fields.
+        # Field naming: <prefix>_<range>_<merge>_<metric>
+        # e.g. paper_world_average_amota, hota_per_ego_cav0, etc.
+        for rm in ("per_ego", "world"):
+            for s in ("sort", "cav0", "average"):
+                ck = f"{rm}_{s}"
+                p_c   = triple_paper_by_combo.get(ck, {}).get(key, {})
+                mg_c  = triple_v2v4real_mg_by_combo.get(ck, {}).get(key, {})
+                h_c   = triple_hota_by_combo.get(ck, {}).get(key, {})
+                paper_fields.update({
+                    f"paper_{rm}_{s}_amota":      p_c.get("amota_pct", 0.0),
+                    f"paper_{rm}_{s}_amotp":      p_c.get("amotp_pct", 0.0),
+                    f"paper_{rm}_{s}_samota":     p_c.get("samota_pct", 0.0),
+                    f"paper_{rm}_{s}_mota":       p_c.get("mota_pct", 0.0),
+                    f"paper_{rm}_{s}_tp_total":   p_c.get("tp_total", 0),
+                    f"paper_{rm}_{s}_fp_total":   p_c.get("fp_total", 0),
+                    f"paper_{rm}_{s}_gt_total":   p_c.get("gt_total", 0),
+                    f"v2v4real_mg_{rm}_{s}_amota":  100.0 * mg_c.get("amota", 0.0),
+                    f"v2v4real_mg_{rm}_{s}_amotp":  100.0 * mg_c.get("amotp", 0.0),
+                    f"v2v4real_mg_{rm}_{s}_samota": 100.0 * mg_c.get("samota", 0.0),
+                    f"v2v4real_mg_{rm}_{s}_mota":   100.0 * mg_c.get("mota", 0.0),
+                    f"v2v4real_mg_{rm}_{s}_gt_total":   mg_c.get("gt_total", 0),
+                    f"v2v4real_mg_{rm}_{s}_max_recall_reached": mg_c.get("max_recall_reached", 0.0),
+                    f"hota_{rm}_{s}":  h_c.get("hota", 0.0),
+                    f"deta_{rm}_{s}":  h_c.get("deta", 0.0),
+                    f"assa_{rm}_{s}":  h_c.get("assa", 0.0),
+                })
+        # Backward-compat: per-strategy fields (no range suffix) point at per_ego
+        for s in ("sort", "cav0", "average"):
+            paper_fields[f"paper_{s}_amota"]    = paper_fields[f"paper_per_ego_{s}_amota"]
+            paper_fields[f"paper_{s}_amotp"]    = paper_fields[f"paper_per_ego_{s}_amotp"]
+            paper_fields[f"paper_{s}_samota"]   = paper_fields[f"paper_per_ego_{s}_samota"]
+            paper_fields[f"paper_{s}_mota"]     = paper_fields[f"paper_per_ego_{s}_mota"]
+            paper_fields[f"paper_{s}_tp_total"] = paper_fields[f"paper_per_ego_{s}_tp_total"]
+            paper_fields[f"paper_{s}_fp_total"] = paper_fields[f"paper_per_ego_{s}_fp_total"]
+            paper_fields[f"paper_{s}_gt_total"] = paper_fields[f"paper_per_ego_{s}_gt_total"]
+            paper_fields[f"v2v4real_mg_{s}_amota"]  = paper_fields[f"v2v4real_mg_per_ego_{s}_amota"]
+            paper_fields[f"v2v4real_mg_{s}_amotp"]  = paper_fields[f"v2v4real_mg_per_ego_{s}_amotp"]
+            paper_fields[f"v2v4real_mg_{s}_samota"] = paper_fields[f"v2v4real_mg_per_ego_{s}_samota"]
+            paper_fields[f"v2v4real_mg_{s}_mota"]   = paper_fields[f"v2v4real_mg_per_ego_{s}_mota"]
+            paper_fields[f"v2v4real_mg_{s}_gt_total"] = paper_fields[f"v2v4real_mg_per_ego_{s}_gt_total"]
+            paper_fields[f"v2v4real_mg_{s}_max_recall_reached"] = paper_fields[f"v2v4real_mg_per_ego_{s}_max_recall_reached"]
+            paper_fields[f"hota_{s}"] = paper_fields[f"hota_per_ego_{s}"]
+            paper_fields[f"deta_{s}"] = paper_fields[f"deta_per_ego_{s}"]
+            paper_fields[f"assa_{s}"] = paper_fields[f"assa_per_ego_{s}"]
 
         per_stream[out_name] = {
             "config_name": out_name,
@@ -404,7 +460,87 @@ def _aggregate_per_config(per_scenario: List[Dict]) -> Dict:
         "avg_perception_anomalies_mean": 0.0,
         "avg_perception_anomalies_std":  0.0,
         "total_anomaly_detections": 0,
+        # ====================================================================
+        # Per-merge-strategy variants (sort, cav0, average) — the master-table
+        # fields. For each strategy, emit BOTH:
+        #  - paper_<s>_amota_mean  (paper protocol, FP-counted, on merged GT)
+        #  - v2v4real_mg_<s>_amota_mean (V2V4Real protocol, FP-ignore, on merged GT)
+        #  - hota_<s>_mean / deta_<s>_mean / assa_<s>_mean
+        # See _pick_cluster_representative() docstring for strategy semantics.
+        # ====================================================================
+        **_per_strategy_aggregations(per_scenario, _wmean, _std),
     }
+
+
+def _per_strategy_aggregations(per_scenario: List[Dict], _wmean, _std) -> Dict:
+    """Aggregate per-(range_mode, merge_strategy) metrics across scenarios.
+
+    Returns a flat dict of suffixed mean/std fields. For each of the 6 combos
+    (range_mode in {per_ego, world} × strategy in {sort, cav0, average}),
+    emits paper_*, v2v4real_mg_*, and hota_* aggregations.
+
+    Also emits backward-compat un-prefixed-by-range fields (e.g.
+    paper_<s>_amota_mean) which alias the per_ego variant.
+    """
+    out: Dict = {}
+    for rm in ("per_ego", "world"):
+        for s in ("sort", "cav0", "average"):
+            tag = f"{rm}_{s}"
+            # Pull per-scenario lists for this combo
+            p_a   = [r["global_metrics"].get(f"paper_{tag}_amota", 0.0)   for r in per_scenario]
+            p_amp = [r["global_metrics"].get(f"paper_{tag}_amotp", 0.0)   for r in per_scenario]
+            p_sam = [r["global_metrics"].get(f"paper_{tag}_samota", 0.0)  for r in per_scenario]
+            p_mot = [r["global_metrics"].get(f"paper_{tag}_mota", 0.0)    for r in per_scenario]
+            p_gt  = [r["global_metrics"].get(f"paper_{tag}_gt_total", 0)  for r in per_scenario]
+            p_tp  = [r["global_metrics"].get(f"paper_{tag}_tp_total", 0)  for r in per_scenario]
+            p_fp  = [r["global_metrics"].get(f"paper_{tag}_fp_total", 0)  for r in per_scenario]
+
+            m_a   = [r["global_metrics"].get(f"v2v4real_mg_{tag}_amota", 0.0)  for r in per_scenario]
+            m_amp = [r["global_metrics"].get(f"v2v4real_mg_{tag}_amotp", 0.0)  for r in per_scenario]
+            m_sam = [r["global_metrics"].get(f"v2v4real_mg_{tag}_samota", 0.0) for r in per_scenario]
+            m_mot = [r["global_metrics"].get(f"v2v4real_mg_{tag}_mota", 0.0)   for r in per_scenario]
+            m_gt  = [r["global_metrics"].get(f"v2v4real_mg_{tag}_gt_total", 0) for r in per_scenario]
+            m_mr  = [r["global_metrics"].get(f"v2v4real_mg_{tag}_max_recall_reached", 0.0)
+                     for r in per_scenario]
+
+            h     = [r["global_metrics"].get(f"hota_{tag}", 0.0) for r in per_scenario]
+            d     = [r["global_metrics"].get(f"deta_{tag}", 0.0) for r in per_scenario]
+            a     = [r["global_metrics"].get(f"assa_{tag}", 0.0) for r in per_scenario]
+
+            out.update({
+                f"paper_{tag}_amota_mean":  _wmean(p_a,   p_gt),
+                f"paper_{tag}_amota_std":   _std(p_a),
+                f"paper_{tag}_amotp_mean":  _wmean(p_amp, p_gt),
+                f"paper_{tag}_samota_mean": _wmean(p_sam, p_gt),
+                f"paper_{tag}_mota_mean":   _wmean(p_mot, p_gt),
+                f"paper_{tag}_tp_total":    int(sum(p_tp)),
+                f"paper_{tag}_fp_total":    int(sum(p_fp)),
+                f"paper_{tag}_gt_total":    int(sum(p_gt)),
+                f"v2v4real_mg_{tag}_amota_mean":  _wmean(m_a,   m_gt),
+                f"v2v4real_mg_{tag}_amota_std":   _std(m_a),
+                f"v2v4real_mg_{tag}_amotp_mean":  _wmean(m_amp, m_gt),
+                f"v2v4real_mg_{tag}_samota_mean": _wmean(m_sam, m_gt),
+                f"v2v4real_mg_{tag}_mota_mean":   _wmean(m_mot, m_gt),
+                f"v2v4real_mg_{tag}_gt_total":    int(sum(m_gt)),
+                f"v2v4real_mg_{tag}_max_recall_reached_mean": (sum(m_mr) / len(m_mr)) if m_mr else 0.0,
+                f"hota_{tag}_mean": (sum(h) / len(h)) if h else 0.0,
+                f"hota_{tag}_std":  _std(h),
+                f"deta_{tag}_mean": (sum(d) / len(d)) if d else 0.0,
+                f"assa_{tag}_mean": (sum(a) / len(a)) if a else 0.0,
+            })
+
+    # Backward-compat aliases: <prefix>_<strategy>_<metric>_mean → per_ego variant
+    for s in ("sort", "cav0", "average"):
+        for metric in ("amota_mean", "amota_std", "amotp_mean", "samota_mean",
+                        "mota_mean", "tp_total", "fp_total", "gt_total"):
+            out[f"paper_{s}_{metric}"] = out[f"paper_per_ego_{s}_{metric}"]
+        for metric in ("amota_mean", "amota_std", "amotp_mean", "samota_mean",
+                        "mota_mean", "gt_total", "max_recall_reached_mean"):
+            out[f"v2v4real_mg_{s}_{metric}"] = out[f"v2v4real_mg_per_ego_{s}_{metric}"]
+        for metric in ("hota_mean", "hota_std", "deta_mean", "assa_mean"):
+            out[f"{metric.split('_')[0]}_{s}_{metric.split('_', 1)[1]}"] = \
+                out[f"{metric.split('_')[0]}_per_ego_{s}_{metric.split('_', 1)[1]}"]
+    return out
 
 
 def _write_split_summary(split_dir: Path, split_name: str, scenarios_in_split: List[Dict]) -> None:
@@ -450,12 +586,22 @@ def run_suite(
     detector_max_range: float = 100.0,
     variance_floor: Optional[float] = None,
     score_threshold: float = 0.3,
+    score_threshold_by_vehicle: Optional[Dict[str, float]] = None,
     use_static_matching: bool = True,
     vehicle_classes: Optional[List[str]] = None,
     class_thresholds: Optional[Dict[str, float]] = None,
     self_report_egos: bool = True,
     p_tp_birth_gate: Optional[float] = None,
     lifecycle_mode: str = "legacy",
+    per_cov_lifecycle: Optional[Dict[str, str]] = None,
+    data_driven_gate_alpha: Optional[float] = None,
+    data_driven_gate_k: float = 10.0,
+    data_driven_gate_fit: str = "quadratic",
+    data_driven_gate_csv: Optional[str] = None,
+    data_driven_gate_polar_dir: Optional[str] = None,
+    data_driven_lifecycle: bool = False,
+    data_driven_lifecycle_csv: Optional[str] = None,
+    max_scenarios: Optional[int] = None,
     ab3dmot_min_hits: int = 3,
     ab3dmot_max_age: int = 2,
     per_ego_nms_iou: float = 1.0,
@@ -469,8 +615,16 @@ def run_suite(
     iou_weight: float = 0.4,
     mahal_gate: float = 13.82,
     tape_score_miss_decay: Optional[float] = None,
+    streams_keep: Optional[List[str]] = None,
+    dump_match_tapes: bool = False,
 ) -> None:
-    """Run the suite and write per-split summary.json files."""
+    """Run the suite and write per-split summary.json files.
+
+    `dump_match_tapes=True` additionally writes a gzipped per-scenario
+    `match_tapes.json.gz` (per-ego match tape for every stream) so AMOTP can be
+    re-scored offline via scripts/rescore_v2v4real_amotp_from_tapes.py without
+    re-running the tracker.
+    """
     export_dir = Path(export_dir)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -479,6 +633,10 @@ def run_suite(
     if splits:
         wanted = set(splits)
         scenarios = [(sp, sn, sd) for (sp, sn, sd) in scenarios if sp in wanted]
+
+    if max_scenarios is not None and max_scenarios > 0:
+        scenarios = scenarios[:max_scenarios]
+        print(f"  [smoke] limiting to first {max_scenarios} scenario(s)")
 
     if not scenarios:
         print(f"  ✗ No scenarios found in {export_dir} (splits filter: {splits})")
@@ -519,11 +677,20 @@ def run_suite(
         "detector_max_range": detector_max_range,
         "variance_floor": variance_floor,
         "score_threshold": score_threshold,
+        "score_threshold_by_vehicle": score_threshold_by_vehicle,
         "vehicle_classes": sorted(vehicle_classes) if vehicle_classes else None,
         "class_thresholds": class_thresholds,
         "use_static_matching": use_static_matching,
         "p_tp_birth_gate": p_tp_birth_gate,
         "lifecycle_mode": lifecycle_mode,
+        "per_cov_lifecycle": per_cov_lifecycle,
+        "data_driven_gate_alpha": data_driven_gate_alpha,
+        "data_driven_gate_k": data_driven_gate_k,
+        "data_driven_gate_fit": data_driven_gate_fit,
+        "data_driven_gate_csv": data_driven_gate_csv,
+        "data_driven_gate_polar_dir": data_driven_gate_polar_dir,
+        "data_driven_lifecycle": data_driven_lifecycle,
+        "data_driven_lifecycle_csv": data_driven_lifecycle_csv,
         "ab3dmot_min_hits": ab3dmot_min_hits,
         "ab3dmot_max_age":  ab3dmot_max_age,
         "per_ego_nms_iou": per_ego_nms_iou,
@@ -537,6 +704,7 @@ def run_suite(
         "iou_weight": iou_weight,
         "mahal_gate": mahal_gate,
         "tape_score_miss_decay": tape_score_miss_decay,
+        "streams_keep": streams_keep,
         "splits_filter": splits,
         "n_scenarios": len(scenarios),
     }
@@ -549,12 +717,21 @@ def run_suite(
         "detector_max_range": detector_max_range,
         "variance_floor": variance_floor,
         "score_threshold": score_threshold,
+        "score_threshold_by_vehicle": score_threshold_by_vehicle,
         "vehicle_classes": list(vehicle_classes) if vehicle_classes else None,
         "class_thresholds": class_thresholds,
         "use_static_matching": use_static_matching,
         "self_report_egos": self_report_egos,
         "p_tp_birth_gate": p_tp_birth_gate,
         "lifecycle_mode": lifecycle_mode,
+        "per_cov_lifecycle": per_cov_lifecycle,
+        "data_driven_gate_alpha": data_driven_gate_alpha,
+        "data_driven_gate_k": data_driven_gate_k,
+        "data_driven_gate_fit": data_driven_gate_fit,
+        "data_driven_gate_csv": data_driven_gate_csv,
+        "data_driven_gate_polar_dir": data_driven_gate_polar_dir,
+        "data_driven_lifecycle": data_driven_lifecycle,
+        "data_driven_lifecycle_csv": data_driven_lifecycle_csv,
         "ab3dmot_min_hits": ab3dmot_min_hits,
         "ab3dmot_max_age":  ab3dmot_max_age,
         "per_ego_nms_iou": per_ego_nms_iou,
@@ -568,6 +745,12 @@ def run_suite(
         "iou_weight": iou_weight,
         "mahal_gate": mahal_gate,
         "tape_score_miss_decay": tape_score_miss_decay,
+        # Optional subset of STREAM_KEYS to build/evaluate (None = all 30).
+        # Passed straight through to v2v4real_replay.run_scenario, which
+        # validates the keys. Used by sweep drivers (e.g.
+        # scripts/sweep_gate_w.py) that only need one stream per config.
+        "streams_keep": streams_keep,
+        "dump_match_tapes": dump_match_tapes,
     }
 
     # Per-split scenario buckets, populated as workers finish.
@@ -602,6 +785,16 @@ def run_suite(
             scenario_out_dir.mkdir(parents=True, exist_ok=True)
             for config_name, run_dict in per_stream.items():
                 _write_run_csv(scenario_out_dir / config_name / "run_01.csv", run_dict)
+
+            # Optionally persist the full per-ego match tape (input to
+            # compute_ab3dmot_metrics_iou) so AMOTP can be re-scored offline
+            # without re-running the tracker (enabled via dump_match_tapes).
+            tape = metrics.get("match_tape_per_ego")
+            if tape is not None:
+                import gzip
+                with gzip.open(scenario_out_dir / "match_tapes.json.gz", "wt",
+                               encoding="utf-8") as fh:
+                    json.dump(tape, fh)
 
             split_results[split].append({
                 "scenario_name": scenario_name,

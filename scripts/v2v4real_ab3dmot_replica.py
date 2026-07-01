@@ -353,7 +353,7 @@ def replay_scenario(scenario_dir: Path,
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                   formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--export-dir", default="/home/rave/test/mmdetection3d/work_dirs/cmr_export")
+    ap.add_argument("--export-dir", default=str(_LOCAL_PATHS.get("mmdet3d_root") / "work_dirs/cmr_export"))
     ap.add_argument("--splits", default="test")
     ap.add_argument("--score-threshold", type=float, default=0.20)
     ap.add_argument("--nms-iou", type=float, default=0.15,

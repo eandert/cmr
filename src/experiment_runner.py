@@ -2325,7 +2325,7 @@ if __name__ == "__main__":
         default=None,
         choices=["fast_city", "fast_highway", "fast_rural", "city", "highway", "rural"],
         metavar="MAP",
-        help="SUMO map to use (default: single). Use tempe_2x3 for Tempe 2x3 grid map."
+        help="SUMO map to use. Choices: fast_city, fast_highway, fast_rural, city, highway, rural."
     )
     
     parser.add_argument(
@@ -2561,7 +2561,7 @@ if __name__ == "__main__":
     # Show detector model info
     det_range = suite.variants[0].config.get("detector_max_range", 100.0) if suite.variants else 100.0
     try:
-        from error_models import get_error_model
+        from error_model import ErrorModel, ErrorModelCoverageError
         from config.detector_type import DetectorType
         # Get the actual detector type from the suite config
         cfg_det = suite.variants[0].config.get("detector_type", None) if suite.variants else None
@@ -2580,8 +2580,13 @@ if __name__ == "__main__":
                     break
             if not det_model_name:
                 det_model_name = "detr3d"  # default
-        _test_model = get_error_model(det_model_name, max_range=det_range)
-        polar_status = "POLAR (angle+distance)" if _test_model.has_polar else "distance-only"
+        # Probe whether the sensor supports polar mode by trying to load it.
+        polar_status = "distance-only"
+        try:
+            ErrorModel(det_model_name, mode="polar", max_range=det_range)
+            polar_status = "POLAR (angle+distance)"
+        except ErrorModelCoverageError:
+            polar_status = "distance-only (polar unavailable)"
         det_info = f"{det_model_name}, {polar_status}"
     except Exception:
         det_info = "unknown"

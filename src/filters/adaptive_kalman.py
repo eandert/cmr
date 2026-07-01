@@ -139,6 +139,15 @@ class AdaptiveKalman(ResizableKalman):
             if self.precision_weighted_fusion:
                 self._precision_weighted_update(valid_measurements, valid_covariances, elapsed)
             else:
+                # Sequential KF updates — sort least-accurate first so the noisier
+                # measurement anchors a still-loose P, and the more precise ones
+                # tighten on top. With constant R this is a no-op; only matters
+                # under range-varying R (GPEM).
+                _order = sorted(
+                    range(len(valid_covariances)),
+                    key=lambda i: -float(np.trace(valid_covariances[i])))
+                valid_measurements = [valid_measurements[i] for i in _order]
+                valid_covariances  = [valid_covariances[i]  for i in _order]
                 for mu, adjusted_cov in zip(valid_measurements, valid_covariances):
                     Z_t = mu.transpose().reshape(-1, 1)
                     self.X_hat_t, self.P_hat_t = utils.kalman_update(

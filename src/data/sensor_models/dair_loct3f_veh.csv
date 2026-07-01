@@ -1,0 +1,8 @@
+# dair_loct3f_veh - Test-3 final-boss localizer (auto-generated). long_std=0.85 lat_std=0.47; bias=0 (no oracle); static path consumes std.
+error_type,intercept,slope,quad_a,quad_b,quad_c,bias_intercept,bias_slope,bias_quad_a,bias_quad_b,bias_quad_c,std_intercept,std_slope,std_quad_a,std_quad_b,std_quad_c,var_intercept,var_slope,var_quad_a,var_quad_b,var_quad_c,unit,notes
+longitudinal,0.67820187668,0.0,0.0,0.0,0.67820187668,0.0,0.0,0.0,0.0,0.0,0.85,0.0,0.0,0.0,0.85,0.7224999999999999,0.0,0.0,0.0,0.7224999999999999,meters,longitudinal (final-boss)
+lateral,0.375005743576,0.0,0.0,0.0,0.375005743576,0.0,0.0,0.0,0.0,0.0,0.47,0.0,0.0,0.0,0.47,0.22089999999999999,0.0,0.0,0.0,0.22089999999999999,meters,lateral (final-boss)
+vertical,0.023936536824,0.0,0.0,0.0,0.023936536824,0.0,0.0,0.0,0.0,0.0,0.03,0.0,0.0,0.0,0.03,0.0009,0.0,0.0,0.0,0.0009,meters,vertical (final-boss)
+roll,0.0039894228040000005,0.0,0.0,0.0,0.0039894228040000005,0.0,0.0,0.0,0.0,0.0,0.005,0.0,0.0,0.0,0.005,2.5e-05,0.0,0.0,0.0,2.5e-05,radians,roll (final-boss)
+pitch,0.0039894228040000005,0.0,0.0,0.0,0.0039894228040000005,0.0,0.0,0.0,0.0,0.0,0.005,0.0,0.0,0.0,0.005,2.5e-05,0.0,0.0,0.0,2.5e-05,radians,pitch (final-boss)
+yaw,0.0039894228040000005,0.0,0.0,0.0,0.0039894228040000005,0.0,0.0,0.0,0.0,0.0,0.005,0.0,0.0,0.0,0.005,2.5e-05,0.0,0.0,0.0,2.5e-05,radians,yaw (final-boss)

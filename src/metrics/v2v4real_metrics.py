@@ -7,9 +7,14 @@ two protocols differ in subtle but important ways:
 
   - AB3DMOT uses **40 recall thresholds** (0.025, 0.050, ..., 1.000); nuScenes
     uses 10.
-  - AB3DMOT defines **AMOTP↑** as `mean(1 - dist/threshold)` over recalls
-    (higher is better — i.e. closer matches score higher), while nuScenes
-    AMOTP is mean translation error (lower is better).
+  - AB3DMOT defines **AMOTP↑** (higher is better — closer matches score
+    higher), while nuScenes AMOTP is mean translation error (lower is better).
+    The exact AB3DMOT MOTP depends on the match cost: with the 3D-IoU gate
+    used by V2V4Real/DMSTrack it is `mean(IoU)` over TPs (no gate
+    normalization — `compute_ab3dmot_metrics_iou`, the canonical convention,
+    reproduces DMSTrack's published 57.94); the legacy center-distance variant
+    (`compute_ab3dmot_metrics`) uses `mean(1 - dist/threshold)`. Prefer the IoU
+    evaluator for paper numbers so they match the V2V4Real leaderboard.
   - AB3DMOT adds **sAMOTA**: average of sMOTA(r)=max(0,(TP-FP-IDS)/(r*GT)) over recall thresholds.
     This corrects for the fact that the recall sweep can't always reach all
     targets — without scaling, methods with a lower ceiling on recall get
@@ -47,17 +52,23 @@ import math
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple
 
+import sys
+from pathlib import Path
+
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-
-CENTER_DIST_THRESHOLD_M = 2.0
-# AB3DMOT default: 40 recall thresholds in 0.025 steps.
-RECALL_THRESHOLDS = np.arange(0.025, 1.0001, 0.025)
-# Mostly-Tracked / Mostly-Lost thresholds (Bernardin & Stiefelhagen 2008,
-# adopted by MOT16 and AB3DMOT).
-MT_THRESHOLD = 0.8
-ML_THRESHOLD = 0.2
+# eval_config is the single source of truth for these constants — import them
+# rather than redeclaring inline so the eval stack agrees on every threshold.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from eval_config import (  # noqa: E402
+    CENTER_DIST_THRESHOLD_M,
+    RECALL_THRESHOLDS,
+    MT_TRACKED_RATIO as MT_THRESHOLD,
+    ML_TRACKED_RATIO as ML_THRESHOLD,
+    NUM_SAMPLE_PTS,
+    HUNGARIAN_INFEASIBLE_COST,
+)
 
 
 # --------------------------------------------------------------------------
@@ -228,13 +239,23 @@ def compute_ab3dmot_metrics_iou(
     convex_hull: bool = False,
     use_track_avg_score: bool = False,
     ab3dmot_rematching: bool = False,
+    state_mode: str = "clean",
 ) -> Dict:
-    """KITTI-V2V4Real-style AMOTA evaluator: BEV-IoU @ iou_threshold gate.
+    """KITTI-V2V4Real-style AMOTA/AMOTP evaluator: BEV-IoU @ iou_threshold gate.
 
     Drop-in replacement for compute_ab3dmot_metrics() but with full-bbox
     tracks & gts and IoU-based match gate. Mirrors DMSTrack's
     `evaluate_v2v4real` evaluator behaviour as closely as the BEV
     approximation allows.
+
+    AMOTP here is the **canonical AB3DMOT/V2V4Real `AMOTP↑`**: per recall
+    threshold, MOTP = mean 3D-IoU over true positives (AB3DMOT
+    `evaluate.py:1024`, `MOTP = total_cost/tp` where `total_cost` sums IoU);
+    AMOTP averages MOTP over the 40-point recall sweep (`evaluate.py:1196`).
+    There is NO division by the IoU gate — that earlier `/0.75` normalization
+    was an artifact that made our numbers ~11 pts low (46.47 vs DMSTrack's
+    published 57.94). AMOTP depends only on matched-TP IoUs, so it is
+    invariant to FP treatment (the `ours`/`v2v` protocol split).
 
     `per_frame` schema:
         {"frame_idx": int,
@@ -358,18 +379,29 @@ def compute_ab3dmot_metrics_iou(
 
         _threshold_list, _recall_list = _get_thresholds(_tp_scores, gt_total)
 
-        _iou_dist_max = 1.0 - iou_threshold
         _mota_vals: List[float] = []
         _smota_vals: List[float] = []
         _motp_vals: List[float] = []
+        _debug_perthresh: List[Tuple] = []
+
+        # DMSTrack/KITTI 'paper_compat' min-height FP bug: trk.valid is set on a
+        # matched detection and NEVER cleared between recall-threshold passes, so
+        # a (frame, track) matched at a higher-confidence threshold leaks valid=True
+        # and is COUNTED as an FP when it goes unmatched at a lower threshold —
+        # instead of being min-height-ignored. We replicate it by remembering
+        # every (frame, track_id) ever matched (thresholds run high-conf → low-conf)
+        # and counting an unmatched track as FP iff it was matched at a higher pass.
+        # 'clean' (default) ignores all unmatched (the original v2v behaviour).
+        _ever_matched: set = set()
 
         for _conf_thresh, _recall_target in zip(_threshold_list, _recall_list):
             _tp = _fp = _fn = 0
             _tp_dist = 0.0
-            _matched: List[Tuple] = []
+            # Per-GT trajectory of assigned tracker id (-1 when present-but-unmatched),
+            # in frame order — mirrors evaluate.py's seq_trajectories for exact IDS.
+            _gt_traj: Dict[int, List[int]] = {}
 
             for f in per_frame:
-                fidx = f["frame_idx"]
                 filt_t = [t for t in f["tracks"] if _track_avg.get(t[0], 0.0) >= _conf_thresh]
                 gts_f = f["gts"]
 
@@ -378,23 +410,38 @@ def compute_ab3dmot_metrics_iou(
                 else:
                     _m, _ut, _ug = match_frame_iou(filt_t, gts_f, iou_threshold, convex_hull=convex_hull)
 
+                gi_to_tid = {gi: filt_t[ti][0] for ti, gi, _c in _m}
                 for ti, gi, cost in _m:
                     _tp += 1
                     _tp_dist += cost
-                    _matched.append((fidx, filt_t[ti][0], gts_f[gi][0]))
+                    if state_mode == "paper_compat":
+                        _ever_matched.add((f["frame_idx"], filt_t[ti][0]))
+                # Record every present GT's assignment this frame (matched tid or -1).
+                for gi, g in enumerate(gts_f):
+                    _gt_traj.setdefault(g[0], []).append(gi_to_tid.get(gi, -1))
 
-                if not ignore_unmatched_fps:
+                if state_mode == "paper_compat" and ignore_unmatched_fps:
+                    # valid-leak: count an unmatched track as FP only if it was
+                    # matched at a higher-confidence threshold (leaked valid=True).
+                    for ti in _ut:
+                        if (f["frame_idx"], filt_t[ti][0]) in _ever_matched:
+                            _fp += 1
+                elif not ignore_unmatched_fps:
                     _fp += len(_ut)
                 _fn += len(_ug)
 
-            _ids = _count_ids(_matched)
+            _ids = _count_id_switches_traj(_gt_traj)
             _mota = max(0.0, 1.0 - (_fn + _fp + _ids) / max(gt_total, 1))
             _smota = min(1.0, max(0.0, (_tp - _fp - _ids) / max(_recall_target * gt_total, 1e-9)))
-            _avg_d = (_tp_dist / _tp) if _tp > 0 else _iou_dist_max
-            _motp = max(0.0, 1.0 - _avg_d / max(_iou_dist_max, 1e-6))
+            # Canonical AB3DMOT/V2V4Real MOTP = mean 3D-IoU over TPs
+            # (total_cost/tp, evaluate.py:1024) — NO gate normalization.
+            # _tp_dist sums (1-IoU), so mean IoU = 1 - _tp_dist/_tp; MOTP=0
+            # when there are no TPs (evaluate.py:1021-1022).
+            _motp = (1.0 - _tp_dist / _tp) if _tp > 0 else 0.0
             _mota_vals.append(_mota)
             _smota_vals.append(_smota)
             _motp_vals.append(_motp)
+            _debug_perthresh.append((round(_recall_target, 4), _mota, _tp, _fp, _fn, _ids, _conf_thresh))
 
         n_recalls = len(recall_thresholds)
         while len(_mota_vals) < n_recalls:
@@ -408,7 +455,14 @@ def compute_ab3dmot_metrics_iou(
         _tp_full = [e for e in all_track_entries if e[3] is not None]
         _fp_full = 0 if ignore_unmatched_fps else len([e for e in all_track_entries if e[3] is None])
         _fn_full = gt_total - len(_tp_full)
-        _ids_full = _count_ids([(e[1], e[2], e[3]) for e in _tp_full])
+        # Build full-data per-GT trajectory (frame order) from per_gt_lifeline for exact IDS.
+        _gt_traj_full: Dict[int, List[int]] = {}
+        for f in per_frame:
+            fidx = f["frame_idx"]
+            for g in f["gts"]:
+                _gt_traj_full.setdefault(g[0], []).append(
+                    per_gt_lifeline.get(g[0], {}).get(fidx, -1))
+        _ids_full = _count_id_switches_traj(_gt_traj_full)
         _mota_full = max(0.0, 1.0 - (_ids_full + _fp_full + _fn_full) / max(gt_total, 1))
 
         mt = ml = 0
@@ -427,6 +481,10 @@ def compute_ab3dmot_metrics_iou(
             "max_eval_range_m": max_eval_range_m, "n_frames": n_frames, "gt_total": gt_total,
             "tp_total": len(_tp_full), "fp_total": _fp_full,
             "ids_total": _ids_full,
+            "_debug_perthresh": _debug_perthresh,
+            "_debug_threshold_list": list(_threshold_list),
+            "_debug_recall_list": list(_recall_list),
+            "_debug_n_tp_scores": len(_tp_scores),
         }
 
     # Recall sweep (same as compute_ab3dmot_metrics but operating on
@@ -441,7 +499,6 @@ def compute_ab3dmot_metrics_iou(
     target_recalls = list(recall_thresholds)
     target_idx = 0
 
-    iou_dist_max = 1.0 - iou_threshold  # max valid "distance" under this gate
     for entry in all_track_entries:
         score, fidx, track_id, gt_id, dist = entry
         if gt_id is not None:
@@ -467,8 +524,9 @@ def compute_ab3dmot_metrics_iou(
             smota_r = min(1.0, max(0.0, (tp - fp - ids) / max(r * gt_total, 1e-9)))
             mota_per_recall.append(mota_r)
             smota_per_recall.append(smota_r)
-            avg_dist = (cum_tp_dist / tp) if tp > 0 else iou_dist_max
-            motp_r = max(0.0, 1.0 - avg_dist / max(iou_dist_max, 1e-6))
+            # Canonical mean 3D-IoU over TPs (no gate normalization); see
+            # the ab3dmot_rematching branch above for the evaluate.py refs.
+            motp_r = (1.0 - cum_tp_dist / tp) if tp > 0 else 0.0
             motp_per_recall.append(motp_r)
             target_idx += 1
 
@@ -572,11 +630,13 @@ def compute_ab3dmot_metrics(
             track_id = tracks[t_idx][0]
             per_gt_lifeline.setdefault(gt_id, {})[fidx] = track_id
 
-        # Tape entries may be either (id, x, y, score) [4-tuple] or
-        # (id, x, y, w, l, yaw, score) [7-tuple]. Score is always last.
+        # Tape entries may be (id, x, y, score) [4-tuple], (id, x, y, w, l, yaw,
+        # score) [7-tuple], or (id, x, y, w, l, yaw, score, h, z) [9-tuple, 3D].
+        # Score is at index 6 for the bbox tapes (NOT t[-1] — the 9-tuple carries
+        # height/z after it), index 3 for the bare 4-tuple.
         for t_idx, t in enumerate(tracks):
             track_id = t[0]
-            score = t[-1] if len(t) >= 4 else 1.0
+            score = t[6] if len(t) >= 7 else (t[-1] if len(t) >= 4 else 1.0)
             gt_id, dist = track_match.get(t_idx, (None, None))
             all_track_entries.append((score, fidx, track_id, gt_id, dist))
 
@@ -812,7 +872,14 @@ def compute_amota_amotp(per_frame, threshold=CENTER_DIST_THRESHOLD_M,
 
 
 def _count_ids(matched: List[Tuple[int, int, int]]) -> int:
-    """Count GT identity switches across consecutive frames."""
+    """Count GT identity switches across consecutive frames.
+
+    DEPRECATED for AB3DMOT-exact use: this counts a switch between consecutive
+    *matched appearances* even across gaps where the GT was present but
+    unmatched, which over-counts vs evaluate.py (which requires the immediately
+    preceding appearance to also be matched). Kept only for the legacy fast
+    recall-sweep path; the rematching path uses _count_id_switches_traj.
+    """
     if not matched:
         return 0
     by_gt: Dict[int, List[Tuple[int, int]]] = {}
@@ -826,4 +893,27 @@ def _count_ids(matched: List[Tuple[int, int, int]]) -> int:
             if prev_tid is not None and tid != prev_tid:
                 ids += 1
             prev_tid = tid
+    return ids
+
+
+def _count_id_switches_traj(gt_trajectories: Dict[int, List[int]]) -> int:
+    """AB3DMOT-exact id-switch count (port of evaluate.py lines ~897-915).
+
+    `gt_trajectories[gid]` is the ordered list (frame order) of the tracker id
+    assigned to that GT across every frame where the GT is PRESENT, with -1 for
+    present-but-unmatched. A switch is counted at appearance f only when the GT
+    is matched at f and at the immediately preceding appearance f-1 (g[f-1] != -1)
+    and the matched tracker id differs from the last matched id (last_id).
+    (V2V4Real has no ignored/truncated GT, so that handling is omitted.)
+    """
+    ids = 0
+    for g in gt_trajectories.values():
+        if not g or all(v == -1 for v in g):
+            continue
+        last_id = g[0]
+        for f in range(1, len(g)):
+            if last_id != g[f] and last_id != -1 and g[f] != -1 and g[f - 1] != -1:
+                ids += 1
+            if g[f] != -1:
+                last_id = g[f]
     return ids

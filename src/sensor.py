@@ -6,7 +6,7 @@ import numpy as np
 import utils
 import gaussians
 from config.detector_type import DetectorType
-from error_models import get_error_model
+from error_model import ErrorModel
 
 class Sensor:
     """
@@ -51,10 +51,14 @@ class Sensor:
         # Load regression-tested error model if available
         self.error_model = None
         if hasattr(detector_type, 'error_model_name') and detector_type.error_model_name:
-            self.error_model = get_error_model(detector_type.error_model_name, use_gpem_model=use_gpem_model,
-                                               use_quadratic=use_quadratic, max_range=detector_max_range)
-            # Override sensor max_range with error model's max_range for consistent filtering
-            # This ensures ground truth filtering matches the detector's actual range
+            # Translate the legacy (use_gpem_model, use_quadratic) flag pair to a mode.
+            mode = ("quadratic" if (use_gpem_model and use_quadratic)
+                    else "linear" if use_gpem_model
+                    else "static")
+            self.error_model = ErrorModel(
+                detector_type.error_model_name, mode=mode,
+                max_range=(detector_max_range if detector_max_range is not None else 100.0),
+            )
             self.max_range = self.error_model.max_range
         
         self.enable_realistic_fp = enable_realistic_fp
@@ -141,7 +145,7 @@ class Sensor:
 
 
 class DetectedObject:
-    def __init__(self, vehicle_id, vehicle_type, detected_bbox, centroid, width, length, angle, expected_error_gaussian, velocity_vector=None, error_covariance=None, width_std=0.5, length_std=0.5, yaw_variance=None):
+    def __init__(self, vehicle_id, vehicle_type, detected_bbox, centroid, width, length, angle, expected_error_gaussian, velocity_vector=None, error_covariance=None, width_std=0.5, length_std=0.5, yaw_variance=None, z=None, height=None):
         self.vehicle_id = vehicle_id
         self.type = vehicle_type
         self.detected_bbox = detected_bbox
@@ -154,6 +158,14 @@ class DetectedObject:
         self.width_std = width_std
         self.length_std = length_std
         self.yaw_variance = yaw_variance  # MSE for heading (bias² + var), from GPEM
+        # Vertical fields: CMR fuses in 2D BEV, so z (gravity-center) and height
+        # ride alongside the 2D state. None when the detector doesn't report them.
+        # They are EMA-smoothed per track (sensor_fusion._blend_vertical); the
+        # GPEM vertical std is intentionally NOT used to weight them in this pass —
+        # see the VERTICAL_EMA_GAIN note (the world-frame inf z spread is a
+        # localization-error term, deferred with DAIR localization to S2/S3).
+        self.z = z
+        self.height = height
 
     @property
     def detected_bbox_corners(self):

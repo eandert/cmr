@@ -28,9 +28,15 @@ from collections import defaultdict
 from pathlib import Path
 from statistics import mean, stdev
 
+# ── local_paths: developer-set external repos (see paths.local.yaml) ──
+import sys as _sys
+_sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+import local_paths as _LOCAL_PATHS  # noqa: E402
+
+
 REPO    = Path(__file__).resolve().parent.parent
 SRC_DIR = REPO / "src/data/sensor_models"
-MM_DIR  = Path("/home/rave/test/mmdetection3d/src/data/sensor_models")
+MM_DIR  = _LOCAL_PATHS.get("mmdet3d_root") / "src/data/sensor_models"
 
 FP_CLASSES = ["car", "truck", "bus", "construction_vehicle"]
 

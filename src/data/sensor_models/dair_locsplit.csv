@@ -1,0 +1,8 @@
+# dair_locsplit - measured-datum localizer (auto-generated, gen_loc_cov_csvs.py). single model applied to BOTH sources; long=0.429 lat=0.401; bias=0; static path consumes std.
+error_type,intercept,slope,quad_a,quad_b,quad_c,bias_intercept,bias_slope,bias_quad_a,bias_quad_b,bias_quad_c,std_intercept,std_slope,std_quad_a,std_quad_b,std_quad_c,var_intercept,var_slope,var_quad_a,var_quad_b,var_quad_c,unit,notes
+longitudinal,0.3422924765832,0.0,0.0,0.0,0.3422924765832,0.0,0.0,0.0,0.0,0.0,0.429,0.0,0.0,0.0,0.429,0.18404099999999998,0.0,0.0,0.0,0.18404099999999998,meters,longitudinal
+lateral,0.31995170888080005,0.0,0.0,0.0,0.31995170888080005,0.0,0.0,0.0,0.0,0.0,0.401,0.0,0.0,0.0,0.401,0.16080100000000003,0.0,0.0,0.0,0.16080100000000003,meters,lateral
+vertical,0.023936536824,0.0,0.0,0.0,0.023936536824,0.0,0.0,0.0,0.0,0.0,0.03,0.0,0.0,0.0,0.03,0.0009,0.0,0.0,0.0,0.0009,meters,vertical
+roll,0.0039894228040000005,0.0,0.0,0.0,0.0039894228040000005,0.0,0.0,0.0,0.0,0.0,0.005,0.0,0.0,0.0,0.005,2.5e-05,0.0,0.0,0.0,2.5e-05,radians,roll
+pitch,0.0039894228040000005,0.0,0.0,0.0,0.0039894228040000005,0.0,0.0,0.0,0.0,0.0,0.005,0.0,0.0,0.0,0.005,2.5e-05,0.0,0.0,0.0,2.5e-05,radians,pitch
+yaw,0.0039894228040000005,0.0,0.0,0.0,0.0039894228040000005,0.0,0.0,0.0,0.0,0.0,0.005,0.0,0.0,0.0,0.005,2.5e-05,0.0,0.0,0.0,2.5e-05,radians,yaw

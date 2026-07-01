@@ -496,7 +496,19 @@ class ResizableKalman(FilterBase):
                                     self.X_hat_t[2, 0] = alpha * speed + (1 - alpha) * self.X_hat_t[2, 0]
                         self._last_fused_pos = fused_pos.copy()
                     else:
-                        # Sequential Kalman updates (original behavior)
+                        # Sequential Kalman updates (original behavior).
+                        # Sort least-accurate first (largest trace(cov) first) so
+                        # the noisier measurements anchor a still-loose P, and the
+                        # more precise ones tighten it on top. Reverse order would
+                        # over-confine P with the precise update first, then reject
+                        # or under-weight the noisier ones. No-op when all R are
+                        # identical (constant-R baseline) — this only matters under
+                        # range-varying R (GPEM).
+                        _order = sorted(
+                            range(len(valid_covariances)),
+                            key=lambda i: -float(np.trace(valid_covariances[i])))
+                        valid_measurements = [valid_measurements[i] for i in _order]
+                        valid_covariances  = [valid_covariances[i]  for i in _order]
                         for mu, adjusted_cov in zip(valid_measurements, valid_covariances):
                             Z_t = mu.transpose()
                             Z_t = Z_t.reshape(Z_t.shape[0], -1)

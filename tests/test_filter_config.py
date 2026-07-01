@@ -20,6 +20,10 @@ _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 SIGMA_A = _mod.SIGMA_A
 get_sigma_a = _mod.get_sigma_a
+sigma_a_from_R = _mod.sigma_a_from_R
+SIGMA_A_K = _mod.SIGMA_A_K
+set_sigma_a_overrides = _mod.set_sigma_a_overrides
+clear_sigma_a_overrides = _mod.clear_sigma_a_overrides
 
 
 class TestFilterConfigExists(unittest.TestCase):
@@ -57,6 +61,67 @@ class TestFilterConfigOverride(unittest.TestCase):
 
     def test_empty_config_returns_default(self):
         self.assertEqual(get_sigma_a("ekf", {}), SIGMA_A["ekf"])
+
+
+class TestAutoQLaw(unittest.TestCase):
+    """The auto-Q law sigma_a = k*sqrt(mean R) (qr-ratio autotune lead)."""
+
+    def test_calibration_anchor(self):
+        # Calibrated so sigma_a ~= 2.0 at the DAIR detector R ~= 0.025.
+        self.assertAlmostEqual(sigma_a_from_R(0.025), 2.0, delta=0.05)
+
+    def test_k_value(self):
+        # k chosen as 2.0 / sqrt(0.025); sigma_a_from_R(R) == k*sqrt(R).
+        self.assertAlmostEqual(SIGMA_A_K, 2.0 / (0.025 ** 0.5), delta=0.1)
+        self.assertAlmostEqual(sigma_a_from_R(0.09), SIGMA_A_K * 0.3, places=6)
+
+    def test_monotonic_in_R(self):
+        self.assertLess(sigma_a_from_R(0.01), sigma_a_from_R(0.025))
+        self.assertLess(sigma_a_from_R(0.025), sigma_a_from_R(0.2))
+
+    def test_large_R_inflates(self):
+        # An inflated localizer cov (R ~= 0.195) should land sigma_a ~= 5.6, not ~2.
+        self.assertAlmostEqual(sigma_a_from_R(0.195), 5.56, delta=0.2)
+
+    def test_nonnegative_R_clamped(self):
+        self.assertEqual(sigma_a_from_R(-1.0), 0.0)
+
+
+class TestProcessLocalOverride(unittest.TestCase):
+    """The process-local sigma_a override (the config->filter bridge for auto-Q)."""
+
+    def tearDown(self):
+        clear_sigma_a_overrides()
+
+    def test_override_applied(self):
+        set_sigma_a_overrides({"sabre": 3.5})
+        self.assertEqual(get_sigma_a("sabre"), 3.5)
+
+    def test_override_does_not_leak_to_others(self):
+        set_sigma_a_overrides({"sabre": 3.5})
+        self.assertEqual(get_sigma_a("ekf"), SIGMA_A["ekf"])
+
+    def test_clear_restores_default(self):
+        set_sigma_a_overrides({"sabre": 3.5})
+        clear_sigma_a_overrides()
+        self.assertEqual(get_sigma_a("sabre"), SIGMA_A["sabre"])
+
+    def test_config_arg_beats_process_override(self):
+        set_sigma_a_overrides({"ekf": 3.5})
+        self.assertEqual(get_sigma_a("ekf", {"sigma_a_override": {"ekf": 9.0}}), 9.0)
+
+    def test_env_beats_process_override(self):
+        set_sigma_a_overrides({"ekf": 3.5})
+        os.environ["CMR_SIGMA_A_EKF"] = "8.0"
+        try:
+            self.assertEqual(get_sigma_a("ekf"), 8.0)
+        finally:
+            del os.environ["CMR_SIGMA_A_EKF"]
+
+    def test_idempotent_replace(self):
+        set_sigma_a_overrides({"sabre": 3.5})
+        set_sigma_a_overrides({"sabre": 4.5})  # replaces, not merges
+        self.assertEqual(get_sigma_a("sabre"), 4.5)
 
 
 class TestFiltersReadFromConfig(unittest.TestCase):
@@ -103,6 +168,28 @@ class TestFiltersReadFromConfig(unittest.TestCase):
         pf = self._make_filter('filters/particle_filter.py', 'ParticleFilter')
         self.assertEqual(pf.sigma_a, SIGMA_A["pf"],
                         f"PF sigma_a={pf.sigma_a} doesn't match config {SIGMA_A['pf']}")
+
+    def test_filter_reads_process_local_override(self):
+        """A filter built AFTER set_sigma_a_overrides reads the auto-Q value.
+
+        This is the config->filter bridge: filters call get_sigma_a() with no config
+        (they are constructed deep in the fusion stack), so the run entry point installs
+        a process-local override that the filter's own filter_config module exposes.
+        The override must be set on the SAME module the filter imports
+        (sys.modules['filters.filter_config']), not the standalone test copy.
+        """
+        # Loading any filter populates sys.modules['filters.filter_config'].
+        self._make_filter('filters/kalman_ctrv.py', 'ResizableKalman')
+        fc = sys.modules['filters.filter_config']
+        try:
+            fc.set_sigma_a_overrides({"ekf": 7.0})
+            ekf = self._make_filter('filters/kalman_ctrv.py', 'ResizableKalman')
+            self.assertEqual(ekf.sigma_a, 7.0)
+        finally:
+            fc.clear_sigma_a_overrides()
+        # And cleared: a fresh filter is back to the default.
+        ekf2 = self._make_filter('filters/kalman_ctrv.py', 'ResizableKalman')
+        self.assertEqual(ekf2.sigma_a, SIGMA_A["ekf"])
 
 
 if __name__ == "__main__":

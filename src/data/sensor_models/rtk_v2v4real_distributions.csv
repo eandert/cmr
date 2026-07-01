@@ -69,3 +69,11 @@ yaw,14.0,16.0,normal,0.0,0.005,
 yaw,16.0,18.0,normal,0.0,0.005,
 yaw,18.0,20.0,normal,0.0,0.005,
 yaw,20.0,22.0,normal,0.0,0.005,
+# Overall bins (count-weighted aggregate for static mode). All RTK axes are constant
+# across velocity, so these match the per-bin values.
+longitudinal,0.0,22.0,normal,0.0,0.03,
+lateral,0.0,22.0,normal,0.0,0.03,
+vertical,0.0,22.0,normal,0.0,0.03,
+roll,0.0,22.0,normal,0.0,0.005,
+pitch,0.0,22.0,normal,0.0,0.005,
+yaw,0.0,22.0,normal,0.0,0.005,

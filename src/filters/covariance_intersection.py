@@ -956,6 +956,19 @@ class CovarianceIntersectionFilter(FilterBase):
                     for mu, cov in zip(valid_measurements, valid_covariances):
                         meas_estimates.append((mu[:meas_dim], cov[:meas_dim, :meas_dim]))
 
+                    # Sort least-accurate first for sequential pairwise CI. Each
+                    # pairwise CI step picks an ω that minimises trace(P_fused).
+                    # Feeding the noisier measurement first means the running
+                    # estimate stays loose during early steps; the precise ones
+                    # at the end refine without being rejected by an already-tight
+                    # gate. No-op for batch/BICI (those are order-independent) and
+                    # for constant-R (all traces identical).
+                    _order = sorted(
+                        range(len(meas_estimates)),
+                        key=lambda i: -float(np.trace(meas_estimates[i][1])))
+                    meas_estimates = [meas_estimates[i] for i in _order]
+                    valid_tracker_ids = [valid_tracker_ids[i] for i in _order]
+
                     # Extract source participant IDs for SABRE adaptation
                     source_ids = [tid // max_id for tid in valid_tracker_ids]
                     z_meas, R_meas = self._fuse_measurements(meas_estimates, source_ids=source_ids)

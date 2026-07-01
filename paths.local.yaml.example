@@ -1,0 +1,36 @@
+# Local paths to peer repositories — developer-only.
+#
+# ─────────────────────────────────────────────────────────────────────────
+# YOU DO NOT NEED THIS FILE to run the main cmr eval sweep. Our headline
+# numbers reproduce from a fresh `git clone --recursive` of cmr (plus one
+# `python scripts/fetch_baselines.py --apply` for Tier-2 baselines).
+#
+# This file is required ONLY by developer ingest tooling — adding a new
+# detector, refitting GPEM calibrations from your own preds.pkl, or
+# fetching Tier-2 baselines from a local clone instead of the published URL.
+# ─────────────────────────────────────────────────────────────────────────
+#
+# Setup
+#   1. Copy this file:    cp paths.local.yaml.example paths.local.yaml
+#   2. Edit paths.local.yaml so each key points at YOUR local clone.
+#   3. paths.local.yaml is gitignored — your local paths never leave your box.
+#
+# Keys cmr knows about (set only what you need; ingest scripts will tell
+# you which key is missing if you try to use them without it).
+
+# Your local mmdetection3d clone. Used by:
+#   - build_v2v4real_input_bucket.py --rebuild import
+#   - build_v2v4real_input_bucket.py --rebuild gpem
+mmdet3d_root: /path/to/mmdetection3d
+
+# Your local DMSTrack clone. Used by:
+#   - fetch_baselines.py --use-local-clones  (fallback when offline)
+dmstrack_root: /path/to/DMSTrack
+
+# Your local OpenCOOD clone. Used by:
+#   - scripts/cobevt_dets_to_cmr_export.py
+opencood_root: /path/to/OpenCOOD
+
+# Your local V2V4Real clone. Used by:
+#   - fetch_baselines.py --use-local-clones  (fallback when offline)
+v2v4real_root: /path/to/V2V4Real

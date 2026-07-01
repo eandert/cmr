@@ -104,7 +104,13 @@ def test_positive_ass_id_priority_in_cluster():
 
 def test_ego_exclusion():
     """GT rows within ego_exclusion_gate_m of any ego pose are dropped
-    (V2V4Real annotates the OTHER ego as a car in each ego's GT)."""
+    (V2V4Real annotates the OTHER ego as a car in each ego's GT).
+
+    Ego exclusion is OPT-IN: _dedup_gt_for_frame defaults ego_exclusion_gate_m=0.0
+    (documented in its docstring — V2V4Real treats the other ego as a legitimate
+    tracking target, so the production caller keeps them). To exercise the
+    exclusion feature we must pass a positive gate; 2.0 m covers the ~0.3 m
+    ego-proximity offsets in the fixture below."""
     ego_poses = [(0.0, 0.0), (50.0, 50.0)]
     rows = [
         _row(0.5, 0.5, ass_id=-1, vehicle="tesla"),    # inside ego_0 gate, drop
@@ -112,7 +118,8 @@ def test_ego_exclusion():
         _row(10.0, 5.0, ass_id=-1, vehicle="astuff"),  # legitimate, keep
         _row(30.0, 30.0, ass_id=-1, vehicle="tesla"),   # legitimate, keep
     ]
-    out = v2v4real_replay._dedup_gt_for_frame(rows, ego_poses=ego_poses)
+    out = v2v4real_replay._dedup_gt_for_frame(
+        rows, ego_poses=ego_poses, ego_exclusion_gate_m=2.0)
     assert len(out) == 2
     centroids = sorted([(o.centroid[0], o.centroid[1]) for o in out])
     assert centroids == [(10.0, 5.0), (30.0, 30.0)]
@@ -141,9 +148,13 @@ def test_v2v4real_paper_realistic_frame():
         _row(0.57, -62.74, -1, vehicle="astuff", obj_id=7),     # = tesla ego, should be EXCLUDED
         _row(-20.38, -17.16, -1, vehicle="astuff", obj_id=8),
     ]
-    out = v2v4real_replay._dedup_gt_for_frame(rows, ego_poses=ego_poses)
+    # Ego exclusion is opt-in (gate defaults to 0.0); pass a positive gate to
+    # exercise it. 2.0 m covers the largest ego-proximity offset here (~1.27 m
+    # for the astuff-ego row at (-2.29, -103.42) vs ego (-2.27, -104.69)).
+    out = v2v4real_replay._dedup_gt_for_frame(
+        rows, ego_poses=ego_poses, ego_exclusion_gate_m=2.0)
     # After ego exclusion (-2 entries) and spatial dedup of close pairs
-    # (3 from tesla collapse with their astuff counterparts), expect 8
+    # (3 from tesla collapse with their astuff counterparts), expect ~8-9
     # unique physical cars / trucks.
     assert 7 <= len(out) <= 9, f"Expected ~8 dedup'd GTs after ego exclusion, got {len(out)}"
 

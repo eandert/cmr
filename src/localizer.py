@@ -61,54 +61,34 @@ class VelocityBin:
 
 
 def load_localizer_distributions(localizer_type: str) -> dict:
+    """Load velocity-binned distributions from CSV.
+
+    Uses the strict ErrorModel loader underneath but returns the legacy dict
+    of {error_type: [VelocityBin]} that the Localizer class expects.
+
+    Raises FileNotFoundError / ErrorModelSchemaError / ErrorModelCoverageError
+    if the CSV is malformed or missing — no silent {} fallback.
     """
-    Load velocity-binned distributions from CSV.
-    
-    Args:
-        localizer_type: Name of localizer (e.g., "kiss_icp", "orb_slam3")
-    
-    Returns:
-        dict with keys 'lateral', 'radial', etc. mapping to lists of VelocityBin
-    """
+    from error_model import ErrorModel
     csv_name = LOCALIZER_MODELS.get(localizer_type, localizer_type.lower())
-    csv_path = SENSOR_MODELS_DIR / f"{csv_name}_distributions.csv"
-    
-    if not csv_path.exists():
-        return {}
-    
-    bins = {}
-    
-    with open(csv_path) as f:
-        lines = [l for l in f if not l.startswith('#') and l.strip()]
-    
-    if not lines:
-        return {}
-    
-    reader = csv.DictReader(lines)
-    for row in reader:
-        error_type = row.get('error_type', '')
-        if not error_type:
-            continue
-            
-        dist_type = row.get('distribution', 'normal')
-        min_vel = float(row.get('dist_min', 0))
-        max_vel = float(row.get('dist_max', 1))
-        
-        # param1 = mean, param2 = std for normal distribution
-        params = {
-            'mean': float(row.get('param1', 0)),
-            'std': float(row.get('param2', 0.1))
-        }
-        
-        if error_type not in bins:
-            bins[error_type] = []
-        
-        bins[error_type].append(VelocityBin(dist_type, params, min_vel, max_vel))
-    
-    # Sort bins by min_vel for each error type
-    for error_type in bins:
-        bins[error_type].sort(key=lambda b: b.min_vel)
-    
+    # Use linear mode for distributions access — we just need the bin list,
+    # which is loaded for all modes. Velocity max_range 22 m/s matches the
+    # canonical localizer characterization range.
+    em = ErrorModel(csv_name, mode="linear",
+                    independent_var="velocity", max_range=22.0)
+    # Translate ErrorModel's internal _bins (keyed by public axis name like
+    # 'lateral'/'longitudinal') to the legacy VelocityBin format. The
+    # Localizer code below reads bins[error_type] where error_type matches
+    # the legacy CSV-side names — same as the public axis names here.
+    bins: dict[str, list[VelocityBin]] = {}
+    for axis, bin_list in em._bins.items():
+        out: list[VelocityBin] = []
+        for b in bin_list:
+            params = {"mean": float(b.params.get("mu", 0.0)),
+                      "std":  float(b.params.get("sigma", 0.1))}
+            out.append(VelocityBin(b.dist_type, params, b.dist_lo, b.dist_hi))
+        out.sort(key=lambda v: v.min_vel)
+        bins[axis] = out
     return bins
 
 
@@ -185,16 +165,11 @@ def get_localizer(localizer_type: str, error_package: 'ErrorPackage',
     Returns:
         Configured Localizer instance
     """
-    try:
-        model = load_localizer_model(localizer_type)
-    except FileNotFoundError:
-        # Fallback to default coefficients for unknown localizers
-        model = {
-            'lateral_linear': (0.025, 0.001),  # Default: ~0.04m at 15 m/s
-            'longitudinal_linear': (0.025, 0.001),
-            'lateral_quadratic': (0.025, 0.001, 0.00001),
-            'longitudinal_quadratic': (0.025, 0.001, 0.00001),
-        }
+    # No silent fallback: if the localizer CSV is missing, raise.
+    # Use the alias table to resolve to the canonical CSV stem first; only
+    # then does load_localizer_model raise FileNotFoundError when the
+    # canonical CSV truly does not exist.
+    model = load_localizer_model(localizer_type)
     
     # Load velocity-binned distributions
     distributions = load_localizer_distributions(localizer_type)

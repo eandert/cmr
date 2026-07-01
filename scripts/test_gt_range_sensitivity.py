@@ -14,7 +14,7 @@ from v2v4real_replay import run_scenario
 from metrics.v2v4real_metrics import compute_ab3dmot_metrics
 
 # Pick all 9 test scenarios
-SCEN_ROOT = Path("/home/rave/test/mmdetection3d/work_dirs/cmr_export_pointpillar_score02")
+SCEN_ROOT = _LOCAL_PATHS.get("mmdet3d_root") / "work_dirs/cmr_export_pointpillar_score02"
 test_scenarios = sorted([d for d in SCEN_ROOT.iterdir()
                          if d.is_dir() and d.name.startswith("test__")])
 

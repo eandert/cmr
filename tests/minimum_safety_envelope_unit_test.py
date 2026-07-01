@@ -1,4 +1,13 @@
-from src.minimum_safety_envelope import calculate_mse_violations
+import sys
+import unittest
+from pathlib import Path
+
+# Make src/ importable
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "src"))
+
+from ground_truth import GroundTruthObject  # noqa: E402
+from metrics.minimum_safety_envelope import calculate_mse_violations  # noqa: E402
 
 # Unit tests
 class TestCalculateMSEViolations(unittest.TestCase):

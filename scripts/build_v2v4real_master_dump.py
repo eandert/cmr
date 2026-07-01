@@ -266,17 +266,17 @@ def main():
     rows.extend(emit_lfreplica_rows(
         "centerpoint_zs", "lfreplica_dmstrack_params",
         "score=0 NMS=off IoU-gate=0.0001 (DMSTrack v2v4real.yml recipe)",
-        "/home/rave/test/mmdetection3d/work_dirs/cmr_export",
+        str(_LOCAL_PATHS.get("mmdet3d_root") / "work_dirs/cmr_export"),
         score_threshold=0.0, nms_iou=1.0, match_iou_gate=0.0001))
     rows.extend(emit_lfreplica_rows(
         "centerpoint_zs", "lfreplica_our_params",
         "score=0.20 NMS=0.15 IoU-gate=0.01 (our defaults)",
-        "/home/rave/test/mmdetection3d/work_dirs/cmr_export",
+        str(_LOCAL_PATHS.get("mmdet3d_root") / "work_dirs/cmr_export"),
         score_threshold=0.20, nms_iou=0.15, match_iou_gate=0.01))
     rows.extend(emit_lfreplica_rows(
         "pointpillar_v2v4real_score02", "lfreplica_dmstrack_params",
         "score=0 NMS=off IoU-gate=0.0001",
-        "/home/rave/test/mmdetection3d/work_dirs/cmr_export_pointpillar_score02",
+        str(_LOCAL_PATHS.get("mmdet3d_root") / "work_dirs/cmr_export_pointpillar_score02"),
         score_threshold=0.0, nms_iou=1.0, match_iou_gate=0.0001))
 
     # -------- DMSTrack-bundled detection adapters ---------------------
@@ -284,12 +284,12 @@ def main():
     rows.extend(emit_dmstrack_rows(
         "cobevt_dmstrack_bundled", "ab3dmot_dmstrack_params",
         "DMSTrack v2v4real.yml recipe — closest reproduction of their CoBEVT(*) 37.16 row",
-        "/home/rave/test/DMSTrack/AB3DMOT/data/v2v4real/detection/cobevt_Car_val",
+        "third_party/AB3DMOT/data/v2v4real/detection/cobevt_Car_val",
         score_threshold=0.0, nms_iou=1.0, match_iou_gate=0.0001))
     rows.extend(emit_dmstrack_rows(
         "late_fusion_dmstrack_bundled", "ab3dmot_dmstrack_params",
         "DMSTrack v2v4real.yml recipe — closest reproduction of V2V4Real LF 29.28 row",
-        "/home/rave/test/DMSTrack/AB3DMOT/data/v2v4real/detection/late_fusion_Car_val",
+        "third_party/AB3DMOT/data/v2v4real/detection/late_fusion_Car_val",
         score_threshold=0.0, nms_iou=1.0, match_iou_gate=0.0001))
 
     # -------- write CSV -----------------------------------------------

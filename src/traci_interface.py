@@ -68,18 +68,23 @@ def _detection_with_covariance_from_model(det, participant_x, participant_y, par
     dy = det.centroid[1] - participant_y
     distance = math.hypot(dx, dy)
     angle = math.atan2(dy, dx)
+    # Polar-cov modes need the bearing in degrees to look up the per-(range,angle)
+    # std bin. Static/linear/quadratic modes ignore angle_deg — but ALWAYS passing
+    # it costs nothing and prevents the "polar requires angle_deg; got None" raise
+    # for any sensor configured in polar mode downstream.
+    angle_deg = math.degrees(angle)
 
     if use_mae_covariance:
         # MAE-based covariance: (MAE * 1.2533)² — steeper distance gradient
         # CI benefits from this because it amplifies the close-vs-far R difference
-        d_std = detector_error_model.get_distal_std(distance)
-        p_std = detector_error_model.get_perpendicular_std(distance)
+        d_std = detector_error_model.get_distal_std(distance, angle_deg)
+        p_std = detector_error_model.get_perpendicular_std(distance, angle_deg)
         d_var = d_std**2
         p_var = p_std**2
     else:
         # MSE-based covariance: bias² + variance from regression
-        d_var = detector_error_model.get_distal_mse(distance)
-        p_var = detector_error_model.get_perpendicular_mse(distance)
+        d_var = detector_error_model.get_distal_mse(distance, angle_deg)
+        p_var = detector_error_model.get_perpendicular_mse(distance, angle_deg)
     perc_cov = BivariateGaussian(d_var, p_var, angle).covariance
 
     # Localization covariance from localizer (velocity-dependent, rotated by participant yaw)
@@ -94,9 +99,9 @@ def _detection_with_covariance_from_model(det, participant_x, participant_y, par
         total_cov[0, 0] = max(total_cov[0, 0], variance_floor)
         total_cov[1, 1] = max(total_cov[1, 1], variance_floor)
 
-    w_std = detector_error_model.get_width_std(distance)
-    l_std = detector_error_model.get_length_std(distance)
-    yaw_mse = detector_error_model.get_yaw_mse(distance)
+    w_std = detector_error_model.get_width_std(distance, angle_deg)
+    l_std = detector_error_model.get_length_std(distance, angle_deg)
+    yaw_mse = detector_error_model.get_yaw_mse(distance, angle_deg)
 
     out = sensor.DetectedObject(
         vehicle_id=det.vehicle_id,
@@ -112,6 +117,8 @@ def _detection_with_covariance_from_model(det, participant_x, participant_y, par
         width_std=w_std,
         length_std=l_std,
         yaw_variance=yaw_mse,
+        z=getattr(det, "z", None),
+        height=getattr(det, "height", None),
     )
     # Preserve lifecycle attributes so log_odds tracker can accumulate evidence
     if hasattr(det, "p_tp"):
@@ -142,16 +149,17 @@ def _compute_baseline_covariance():
     distance-dependent and sensor-specific covariance.
     """
     import numpy as np
-    from error_models import get_error_model
+    from error_model import ErrorModel
     from localizer import get_localizer
 
-    # Fleet-weighted detector averages (33/33/33 split)
+    # Fleet-weighted detector averages (33/33/33 split). Use mode='static' to
+    # get the count-weighted overall-bin std per axis; that IS the "average".
     det_config = [('detr3d', 1/3), ('bev_fusion', 1/3), ('centerpoint', 1/3)]
     perc_total = 0.0
     for name, weight in det_config:
-        em = get_error_model(name, use_gpem_model=False, max_range=100.0)
-        d_var = em.get_distal_std_average()**2
-        p_var = em.get_perpendicular_std_average()**2 if hasattr(em, 'get_perpendicular_std_average') else d_var
+        em = ErrorModel(name, mode="static", max_range=100.0)
+        d_var = em.get_distal_std(0.0) ** 2  # static -> distance ignored
+        p_var = em.get_perpendicular_std(0.0) ** 2
         perc_total += weight * (d_var + p_var) / 2.0
 
     # Fleet-weighted localizer averages (50/50 split) at typical speed
@@ -185,6 +193,8 @@ def _detection_with_flat_covariance(det, flat_cov):
         error_covariance=flat_cov,
         width_std=0.3,
         length_std=0.3,
+        z=getattr(det, "z", None),
+        height=getattr(det, "height", None),
     )
     if hasattr(det, "p_tp"):
         out.p_tp = det.p_tp
@@ -198,16 +208,14 @@ _detector_error_model_cache = {}
 
 
 def _get_detector_error_models(detector_model_name, max_range):
-    """
-    Get (static, linear, quadratic, polar) error models for a detector, using cache.
-    """
-    from error_models import get_error_model
+    """Get (static, linear, quadratic, polar) error models for a detector, using cache."""
+    from error_model import ErrorModel
     cache_key = (detector_model_name, max_range)
     if cache_key not in _detector_error_model_cache:
-        em_static = get_error_model(detector_model_name, use_gpem_model=False, max_range=max_range)
-        em_linear = get_error_model(detector_model_name, use_gpem_model=True, use_quadratic=False, max_range=max_range)
-        em_quadratic = get_error_model(detector_model_name, use_gpem_model=True, use_quadratic=True, max_range=max_range)
-        em_polar = get_error_model(detector_model_name, use_gpem_model=True, use_polar=True, max_range=max_range)
+        em_static    = ErrorModel(detector_model_name, mode="static",    max_range=max_range)
+        em_linear    = ErrorModel(detector_model_name, mode="linear",    max_range=max_range)
+        em_quadratic = ErrorModel(detector_model_name, mode="quadratic", max_range=max_range)
+        em_polar     = ErrorModel(detector_model_name, mode="polar",     max_range=max_range)
         _detector_error_model_cache[cache_key] = (em_static, em_linear, em_quadratic, em_polar)
     return _detector_error_model_cache[cache_key]
 
@@ -439,10 +447,10 @@ def run_simulation(config):
         import numpy as np
         static_match_cov = None
         if use_static_matching:
-            # Compute average static matching covariance from the static error model at ~30m
-            from error_models import get_error_model
-            _em_static_ref = get_error_model("bev_fusion", use_gpem_model=False, max_range=_det_max_range)
-            d_std = _em_static_ref.get_distal_std(30.0)
+            # Compute average static matching covariance from the static error model
+            from error_model import ErrorModel
+            _em_static_ref = ErrorModel("bev_fusion", mode="static", max_range=_det_max_range)
+            d_std = _em_static_ref.get_distal_std(30.0)  # static -> distance ignored
             p_std = _em_static_ref.get_perpendicular_std(30.0)
             static_match_cov = np.diag([max(d_std, p_std)**2, max(d_std, p_std)**2])
         # All global fusion objects use passthrough_covariance=True: on match, P is

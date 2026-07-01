@@ -1,0 +1,16 @@
+{
+  "checksums": {
+    "0000.txt": "119aa5b38b6d1dc4d328f470a247830cab0aab6156ee3d44805c8eaca282e796",
+    "0001.txt": "1c103fbd22286370523f21043c94d11f2858fb73e31283d264bb21ac06cb708f",
+    "0002.txt": "0cb6b05290e0b7f3b423422e8d6659ef11c5ae7d5c6cdf34a3cbb46492a131ce",
+    "0003.txt": "9f0a8a99ee9ac61cb3f23f65a682649b948574a6cd64f02ba0436e32fe6a8c2d",
+    "0004.txt": "9c97c597f77d58bea9da29260d5b54acc0ec1efd62927b5989c7d32b647cee10",
+    "0005.txt": "9816c1c30ceafbcfd5d052a6282d8b409104890669ee89fbd7337f35ff623e17",
+    "0006.txt": "8d51126cbeeaa5f1206134a6b52a532e249ab202d9c50e08bd480e0c15c4fe6e",
+    "0007.txt": "a08cc8d5602e5fcc891194e553884ac2a8f0e98137a4dcd66efce814853085ea",
+    "0008.txt": "4c1af1846993fba9076fa37ed730d91af77cc22735301e24b0e6f3aba2dc1fea"
+  },
+  "invariant_problems": [],
+  "invariants_clean": true,
+  "label_dir": "augmented_gt/with_cav"
+}

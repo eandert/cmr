@@ -1,5 +1,6 @@
 import math
 import random
+from collections import Counter
 import numpy as np
 from sklearn.cluster import DBSCAN
 import matplotlib.pyplot as plt
@@ -50,11 +51,70 @@ TAPE_SCORE_MISS_DECAY = 0.5
 # the matching gate forever.
 DEFAULT_INACTIVE_GRACE_S = 1.0
 
+# EMA gain for the per-track vertical (z, height) smoother. CMR fuses in 2D, so
+# z/height ride alongside the planar state as a fixed-gain 1D smoother (decoupled
+# from the 2D filter → BEV fusion/metrics unchanged): new = old + gain·(meas − old).
+# A fixed gain (not GPEM inverse-variance weighting) is used DELIBERATELY for this
+# first pass. The GPEM DETECTOR vertical std is fit in each sensor's own frame and
+# is correct there (veh 0.085–0.14 ≈ measured). The EXTRA z spread the roadside-inf
+# source shows in the WORLD frame (measured 0.189 vs 0.085 sensor-fit) is
+# LOCALIZATION/transform error — the inf pose + system_error_offset residual
+# projected through the tilted mount (horizontal error rotates into z). That belongs
+# in the LOCALIZER covariance (loc_cov, added to perc_cov in the cov-helper), which
+# is intentionally ~0 here (localizer_name="rtk_v2v4real" stand-in; DAIR localization
+# is S2/S3 scope). So inverse-variance weighting on the detector-only std over-trusts
+# inf and underperforms; the fixed-gain smoother is robust to the missing loc term.
+# Once DAIR localization is modeled, GPEM-R vertical fusion falls out for free.
+# 0.5 balances denoising vs tracking gentle z drift. w/l ARE GPEM-variance-fused
+# (their stds are frame-stable) in ResizableKalman/CI — see kalman_ctrv.py:612.
+VERTICAL_EMA_GAIN = 0.5
+
+
+def _as_float_or_none(v):
+    """float(v), or None if v is None/NaN/non-numeric (detector didn't report it)."""
+    if v is None:
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return None if math.isnan(f) else f
+
+
+def _blend_vertical(current, measurement):
+    """EMA-blend a vertical scalar (z or height). First valid obs initialises;
+    a missing measurement leaves the estimate unchanged."""
+    m = _as_float_or_none(measurement)
+    if m is None:
+        return current
+    if current is None:
+        return m
+    return current + VERTICAL_EMA_GAIN * (m - current)
+
 
 def _logit(p: float) -> float:
     """log(p / (1 − p)) clamped against the [eps, 1 − eps] range."""
     p = max(_P_EPS, min(1.0 - _P_EPS, p))
     return math.log(p / (1.0 - p))
+
+
+def _source_id_of(detected_object) -> int:
+    """Recover the source participant id of a detection.
+
+    Fusion.processDetectionFrame encodes the source as
+    `det.vehicle_id = source_participant_id * max_id + idx`, so the
+    participant id (1=astuff, 2=tesla in the V2V4Real replay; 0 for
+    single-detector / sim runs) is `vehicle_id // max_id`. Detections
+    whose vehicle_id is unset/None resolve to source 0 — the same key the
+    single-detector path uses, so the per-source maps degenerate cleanly.
+    """
+    vid = getattr(detected_object, "vehicle_id", None)
+    if vid is None:
+        return 0
+    try:
+        return int(vid) // max_id
+    except (TypeError, ValueError):
+        return 0
 
 
 class MatchClass:
@@ -81,7 +141,10 @@ class MatchClass:
 
 
 class GlobalTracked:
-    def __init__(self, detected_object, time, track_id, fusion_mode, use_trust_scoring=True, passthrough_covariance=False, filter_class=None):
+    def __init__(self, detected_object, time, track_id, fusion_mode, use_trust_scoring=True, passthrough_covariance=False, filter_class=None,
+                 confirm_log_odds=DEFAULT_CONFIRM_LOG_ODDS,
+                 confirm_log_odds_by_source=None,
+                 log_lr_miss_by_source=None):
         self.x = detected_object.centroid[0]
         self.y = detected_object.centroid[1]
         self.passthrough_covariance = passthrough_covariance
@@ -108,6 +171,31 @@ class GlobalTracked:
         # legacy "neutral start, gain confidence by re-detection" behavior.
         self.S_t = _logit(getattr(detected_object, "p_tp", 0.5))
 
+        # --- Per-source LIFECYCLE BLEND state -------------------------------
+        # Mixed-detector configs (astuff=PP, tesla=CPft) route per-detection
+        # economics per source already; the blend extends that to track-level
+        # lifecycle. Each track records:
+        #   * birth_source_id  — participant id of the detection that spawned
+        #                        it (vehicle_id // max_id). Its confirm
+        #                        threshold is inherited from this source.
+        #   * source_hits      — Counter of source ids over every matched
+        #                        update (spawn counts as the first hit). Used
+        #                        to blend log_lr_miss by the source mix.
+        # The per-source maps are dicts {source_id -> float}; a None map or a
+        # missing key falls back to the global scalar, so single-detector
+        # runs degenerate to the legacy scalar path exactly.
+        self._confirm_log_odds_by_source = confirm_log_odds_by_source
+        self._log_lr_miss_by_source = log_lr_miss_by_source
+        self.birth_source_id = _source_id_of(detected_object)
+        self.source_hits = Counter()
+        self.source_hits[self.birth_source_id] += 1
+        # Track-own confirm threshold, inherited from the birthing source.
+        if confirm_log_odds_by_source:
+            self.confirm_log_odds = confirm_log_odds_by_source.get(
+                self.birth_source_id, confirm_log_odds)
+        else:
+            self.confirm_log_odds = confirm_log_odds
+
         # AMOTA-tape score: latest matched detection's confidence. Decayed
         # multiplicatively on miss-frames (TAPE_SCORE_MISS_DECAY) so a track
         # that goes stale ranks low in V2V4Real's recall sweep — analogous
@@ -131,6 +219,15 @@ class GlobalTracked:
         self.width = detected_object.dimensions[0]
         self.length = detected_object.dimensions[1]
         self.angle = detected_object.angle
+
+        # Vertical state (z gravity-center, box height). CMR fuses in 2D BEV, so
+        # z/height are not in any filter's state vector; instead each track keeps
+        # a lightweight EMA of the matched detections' z/height (a steady-state 1D
+        # smoother, decoupled from the 2D filter — BEV fusion/metrics are unchanged).
+        # This denoises the per-frame detector z/height that a 2D tracker would
+        # otherwise have to take at face value, giving genuine 3D track boxes.
+        self.z = _as_float_or_none(getattr(detected_object, "z", None))
+        self.height = _as_float_or_none(getattr(detected_object, "height", None))
 
         # Type voting: track counts of each type seen
         # Uses a sliding window approach with exponential decay
@@ -195,10 +292,19 @@ class GlobalTracked:
         self.hits += 1
         self.misses_since_match = 0
 
+        # Per-source lifecycle blend: record which source fed this update so
+        # the miss-decay can be weighted by the track's source mix.
+        self.source_hits[_source_id_of(detected_object)] += 1
+
         # Refresh tape_score with the latest matched detection's confidence.
         # Falls back to the prior tape_score if det_score not set (keeps
         # legacy/sim pipeline backward-compatible).
         self.tape_score = float(getattr(detected_object, "det_score", self.tape_score))
+
+        # Blend the matched detection's z/height into the track's vertical EMA
+        # (denoise; first observation initialises). Decoupled from the 2D filter.
+        self.z = _blend_vertical(self.z, getattr(detected_object, "z", None))
+        self.height = _blend_vertical(self.height, getattr(detected_object, "height", None))
 
     # Gets our position in an array form so we can use it in the BallTree
     def getPosition(self):
@@ -304,6 +410,27 @@ class GlobalTracked:
         """Add a clamped log-likelihood-ratio update to the existence score."""
         self.S_t += max(-LOG_LR_CLAMP, min(LOG_LR_CLAMP, log_lr))
 
+    def blended_log_lr_miss(self, default_log_lr_miss: float) -> float:
+        """Source-mix-weighted per-miss log-odds decay for this track.
+
+        A track fed by multiple sources decays on a miss by the
+        source-count-weighted average of each source's per-source
+        log_lr_miss. With no per-source map (single-detector run) or a track
+        whose sources are all absent from the map, this returns the global
+        scalar unchanged — exact legacy behaviour.
+        """
+        by_source = self._log_lr_miss_by_source
+        if not by_source or not self.source_hits:
+            return default_log_lr_miss
+        total = 0.0
+        weight = 0.0
+        for src, n in self.source_hits.items():
+            total += n * by_source.get(src, default_log_lr_miss)
+            weight += n
+        if weight <= 0:
+            return default_log_lr_miss
+        return total / weight
+
     @property
     def tracking_score(self) -> float:
         """sigmoid(S_t) ∈ [0, 1] — calibrated existence probability for
@@ -328,10 +455,13 @@ class Fusion:
     # https://github.com/eandert/Jetson_Nano_Camera_Vehicle_Tracker
     def __init__(self, id, use_trust_scoring=True, passthrough_covariance=False, filter_class=None,
                  static_matching_cov=None, p_tp_birth_gate=None,
+                 p_tp_birth_gate_by_source=None,
                  lifecycle_mode="legacy",
                  confirm_log_odds=DEFAULT_CONFIRM_LOG_ODDS,
+                 confirm_log_odds_by_source=None,
                  kill_log_odds=DEFAULT_KILL_LOG_ODDS,
                  log_lr_miss=DEFAULT_LOG_LR_MISS,
+                 log_lr_miss_by_source=None,
                  ab3dmot_min_hits=3,
                  ab3dmot_max_age=2,
                  enable_inactive_preservation=False,
@@ -355,6 +485,21 @@ class Fusion:
         # Detections without a `.p_tp` attribute are treated as P_TP=1.0
         # (calibration unavailable → no gating, identical to current pipeline).
         self.p_tp_birth_gate = p_tp_birth_gate
+
+        # --- Per-source LIFECYCLE BLEND maps --------------------------------
+        # For mixed-detector configs (astuff=PP, tesla=CPft) the track-level
+        # lifecycle params are routed per the DETECTION'S source vehicle
+        # rather than the old first-match-wins astuff-global scalar.
+        #   p_tp_birth_gate_by_source  {source_id -> gate}   birth gate (#1)
+        #   confirm_log_odds_by_source {source_id -> thresh} confirm (#2)
+        #   log_lr_miss_by_source      {source_id -> decay}  miss decay (#3)
+        # Each is keyed by participant id (vehicle_id // max_id; 1=astuff,
+        # 2=tesla, 0=single-detector/sim). None = use the scalar fallback,
+        # which reproduces the legacy single-scalar path exactly.
+        # kill_log_odds stays a single global floor (not detector-specific).
+        self.p_tp_birth_gate_by_source = p_tp_birth_gate_by_source
+        self.confirm_log_odds_by_source = confirm_log_odds_by_source
+        self.log_lr_miss_by_source = log_lr_miss_by_source
 
         # Phase B: track-lifecycle mode.
         #   "legacy"   — fusion_steps > trackShowThreshold (count-based, current).
@@ -420,11 +565,42 @@ class Fusion:
     def update_trust_scores(self, scores: Dict[int, float]) -> None:
         """
         Update trust scores from PerceptionScorer output.
-        
+
         Args:
             scores: Dict mapping participant_id to their normalized trust score
         """
         self.participant_trust_scores.update(scores)
+
+    def _birth_gate_for(self, det) -> Optional[float]:
+        """Resolve the P(TP) birth gate for a detection's SOURCE (blend #1).
+
+        Mixed-detector configs gate each detection against the gate of its
+        own source vehicle (vehicle_id // max_id). With no per-source map the
+        single scalar self.p_tp_birth_gate applies to every source — exact
+        legacy behaviour. A per-source map that lacks a source's key falls
+        back to the scalar too.
+        """
+        if self.p_tp_birth_gate_by_source:
+            return self.p_tp_birth_gate_by_source.get(
+                _source_id_of(det), self.p_tp_birth_gate)
+        return self.p_tp_birth_gate
+
+    def _spawn_track(self, det, timestamp, track_id):
+        """Construct a GlobalTracked, threading the per-source lifecycle maps
+        so the new track records its birth source + resolves its own confirm
+        threshold (blend #2) and can blend its miss-decay (blend #3)."""
+        return GlobalTracked(
+            det,
+            timestamp,
+            track_id,
+            self.fusion_mode,
+            use_trust_scoring=self.use_trust_scoring,
+            passthrough_covariance=self.passthrough_covariance,
+            filter_class=self.filter_class,
+            confirm_log_odds=self.confirm_log_odds,
+            confirm_log_odds_by_source=self.confirm_log_odds_by_source,
+            log_lr_miss_by_source=self.log_lr_miss_by_source,
+        )
 
     def fuseDetectionFrame(self, time, monitor=False):
         result = []
@@ -443,9 +619,11 @@ class Fusion:
                 track.tape_score *= self.tape_score_miss_decay
                 # AB3DMOT-style miss counter
                 track.misses_since_match += 1
-                # Phase B: log-odds miss-evidence accumulation.
+                # Phase B: log-odds miss-evidence accumulation. The decay is
+                # the track's source-mix-weighted log_lr_miss (blend #3); with
+                # no per-source map it equals the global scalar self.log_lr_miss.
                 if self.lifecycle_mode == "log_odds":
-                    track.update_log_odds(self.log_lr_miss)
+                    track.update_log_odds(track.blended_log_lr_miss(self.log_lr_miss))
         if self.lifecycle_mode == "log_odds":
             survivors = []
             for t in self.tracked_list:
@@ -487,7 +665,10 @@ class Fusion:
             if track.is_inactive:
                 continue
             if self.lifecycle_mode == "log_odds":
-                emit = track.S_t > self.confirm_log_odds
+                # Confirm against the track's OWN threshold, inherited from
+                # its birthing source (blend #2). Falls back to the global
+                # self.confirm_log_odds for single-detector runs.
+                emit = track.S_t > track.confirm_log_odds
             elif self.lifecycle_mode == "ab3dmot":
                 emit = track.hits >= self.ab3dmot_min_hits
             else:
@@ -672,7 +853,7 @@ class Fusion:
                             if track.is_inactive:
                                 track.is_inactive = False
                                 track.inactive_since = None
-                                track.S_t = max(track.S_t, self.confirm_log_odds + 0.5)
+                                track.S_t = max(track.S_t, track.confirm_log_odds + 0.5)
                                 track.revive_count += 1
                         matched_track_indices.add(t_idx)
                         matched_det_indices.add(d_idx)
@@ -684,17 +865,14 @@ class Fusion:
                 for d_idx in range(num_detections):
                     if d_idx not in matched_det_indices:
                         det = detection_list[d_idx]
-                        if self.p_tp_birth_gate is not None and \
-                           getattr(det, "p_tp", 1.0) < self.p_tp_birth_gate:
+                        _gate = self._birth_gate_for(det)
+                        if _gate is not None and \
+                           getattr(det, "p_tp", 1.0) < _gate:
                             continue
-                        new = GlobalTracked(
+                        new = self._spawn_track(
                             det,
                             timestamp,
                             (max_id * self.id) + self.current_track_id,
-                            self.fusion_mode,
-                            use_trust_scoring=self.use_trust_scoring,
-                            passthrough_covariance=self.passthrough_covariance,
-                            filter_class=self.filter_class,
                         )
                         if self.current_track_id < max_id:
                             self.current_track_id += 1
@@ -705,13 +883,12 @@ class Fusion:
             else:
                 # No existing tracks: spawn for each detection (Phase A gate).
                 for dl in detection_list:
-                    if self.p_tp_birth_gate is not None and \
-                       getattr(dl, "p_tp", 1.0) < self.p_tp_birth_gate:
+                    _gate = self._birth_gate_for(dl)
+                    if _gate is not None and \
+                       getattr(dl, "p_tp", 1.0) < _gate:
                         continue
-                    new = GlobalTracked(dl, timestamp, (max_id * self.id) + self.current_track_id, self.fusion_mode,
-                                        use_trust_scoring=self.use_trust_scoring,
-                                        passthrough_covariance=self.passthrough_covariance,
-                                        filter_class=self.filter_class)
+                    new = self._spawn_track(
+                        dl, timestamp, (max_id * self.id) + self.current_track_id)
                     if self.current_track_id < max_id:
                         self.current_track_id += 1
                     else:
