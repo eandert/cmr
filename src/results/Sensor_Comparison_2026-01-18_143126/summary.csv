@@ -1,3 +1,0 @@
-Config,Runs,Global AMOTA (mean),Global AMOTA (std),CIS AMOTA (mean),CIS AMOTA (std),CAV AMOTA (mean),CAV AMOTA (std),Anomalies (mean),Anomalies (std),Total Anomalies
-baseline,1,0.7553,0.0000,1.0000,0.0000,1.0000,0.0000,0.00,0.00,0
-normal_sensors,1,0.4115,0.0000,0.6652,0.0000,0.5982,0.0000,0.00,0.00,0

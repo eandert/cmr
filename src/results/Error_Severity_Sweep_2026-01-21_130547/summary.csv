@@ -1,7 +1,0 @@
-Config,Runs,Global AMOTA (mean),Global AMOTA (std),CIS AMOTA (mean),CIS AMOTA (std),CAV AMOTA (mean),CAV AMOTA (std),Anomalies (mean),Anomalies (std),Total Anomalies
-baseline,1,0.6896,0.0000,0.9951,0.0000,0.0000,0.0000,0.00,0.00,0
-extrinsics_5deg,1,0.6695,0.0000,0.9956,0.0000,0.0000,0.0000,0.00,0.00,0
-localization_50pct,1,0.6924,0.0000,0.9883,0.0000,0.0000,0.0000,0.00,0.00,0
-mal_remove_50pct,1,0.6319,0.0000,0.9977,0.0000,0.9948,0.0000,0.00,0.00,0
-mal_add_50pct,1,0.7037,0.0000,1.0000,0.0000,0.0000,0.0000,0.00,0.00,0
-mal_convoy_50pct,1,0.6319,0.0000,0.9907,0.0000,0.0000,0.0000,0.00,0.00,0
