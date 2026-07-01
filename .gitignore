@@ -46,10 +46,6 @@ src/data/sensor_models/pointpillar_v2v4real_tesla_polar_calibration.csv
 # Local developer paths (machine-specific; commit paths.local.yaml.example instead)
 paths.local.yaml
 
-# Stray run logs / scratch at repo root
-*.log
-prompt.txt
-
 # Local symlink to an external peer repo (points off-machine; not for cloners)
 third_party/
 
