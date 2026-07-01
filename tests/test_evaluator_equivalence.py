@@ -42,6 +42,14 @@ if AB3DMOT_ROOT.exists():
     sys.path.insert(0, str(AB3DMOT_ROOT))
     sys.path.insert(0, str(AB3DMOT_ROOT / "Xinshuo_PyToolbox"))
 
+# Every test here compares our eval stack to the vendored AB3DMOT evaluator
+# (evalpy) under third_party/AB3DMOT — a peer-repo symlink absent in a fresh
+# clone / CI. Skip the whole module then rather than error on chdir into it.
+pytestmark = pytest.mark.skipif(
+    not AB3DMOT_ROOT.exists(),
+    reason="AB3DMOT absent (third_party/AB3DMOT not present — fresh clone/CI)",
+)
+
 from eval_config import (  # noqa: E402
     CLEAN_MODE_TOL_AMOTA,
     IOU_3D_GATE,
