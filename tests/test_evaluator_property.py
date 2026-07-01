@@ -80,6 +80,14 @@ from score_kitti_tracks_through_run_suite import (  # noqa: E402
 )
 from verify_eval_stack import score_ours, score_evalpy  # noqa: E402
 
+# The vendored AB3DMOT evaluator (evalpy) lives under third_party/AB3DMOT (a
+# peer-repo symlink), absent in a fresh clone / CI. Skip the equivalence suite
+# then rather than error when the evaluator can't be reached.
+pytestmark = pytest.mark.skipif(
+    not (REPO / "third_party" / "AB3DMOT" / "scripts" / "KITTI" / "evaluate.py").exists(),
+    reason="AB3DMOT evaluator absent (third_party/AB3DMOT not present — fresh clone/CI)",
+)
+
 # ── Test-wide constants ───────────────────────────────────────────────────────
 # Bit-identity target. The historical real-data residual is 1.11e-16; we add a
 # little headroom so platform-specific BLAS rounding does not flake. Anything

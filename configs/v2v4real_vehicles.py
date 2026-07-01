@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import statistics
 import sys
+import warnings
 from pathlib import Path
 from typing import Dict, Tuple
 
@@ -34,6 +35,14 @@ from typing import Dict, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from eval_config import BASE_GT_LABEL_DIR, DIM_COLS, POS_COLS  # noqa: E402
+
+
+# Cached tesla-frame LiDAR mount offset, derived from the frozen, sha256-pinned
+# base GT. Used as a fallback when those GT labels aren't on disk (a fresh clone
+# or CI, where third_party/AB3DMOT is absent) so importing this module never
+# hard-requires that external data. When the GT is present the derived value
+# equals this constant.
+_TESLA_MOUNT_M_FALLBACK = -1.8666935010914854
 
 
 def _derive_tesla_mount_height() -> float:
@@ -65,9 +74,12 @@ def _derive_tesla_mount_height() -> float:
                 # Y_center - h/2 = mount offset for cars on flat ground
                 mounts.append(y - h / 2.0)
     if not mounts:
-        raise RuntimeError(
-            f"could not derive LiDAR mount: no parseable GT rows under "
-            f"{BASE_GT_LABEL_DIR}")
+        warnings.warn(
+            f"v2v4real_vehicles: no parseable GT rows under {BASE_GT_LABEL_DIR}; "
+            f"using cached tesla mount {_TESLA_MOUNT_M_FALLBACK} m (frozen base-GT "
+            "value). Expected in a fresh clone / CI where third_party/AB3DMOT is absent.",
+            RuntimeWarning, stacklevel=2)
+        return _TESLA_MOUNT_M_FALLBACK
     return float(statistics.mean(mounts))
 
 

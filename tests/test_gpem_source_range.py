@@ -25,7 +25,9 @@ import pytest
 AB3DMOT_DIR = Path(__file__).resolve().parent.parent / "third_party" / "AB3DMOT"
 sys.path.insert(0, str(AB3DMOT_DIR))
 
-import ab3dmot_gpem_injector as gi  # noqa: E402
+# The injector lives in third_party/AB3DMOT (a peer repo, absent in a fresh
+# clone / CI). Skip this whole module rather than error when it isn't importable.
+gi = pytest.importorskip("ab3dmot_gpem_injector")  # noqa: E402
 
 
 class FakeFilter:

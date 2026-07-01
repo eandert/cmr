@@ -40,6 +40,13 @@ from gt_integrity import (  # noqa: E402
 
 PINNED_MANIFEST_PATH = REPO / "tests" / "fixtures" / "gt_checksums.json"
 
+# The base GT lives under third_party/AB3DMOT (a peer-repo symlink), absent in a
+# fresh clone / CI. Skip the whole module then rather than fail on missing files.
+pytestmark = pytest.mark.skipif(
+    not Path(BASE_GT_LABEL_DIR).exists() or not any(Path(BASE_GT_LABEL_DIR).glob("*.txt")),
+    reason="base GT labels absent (third_party/AB3DMOT not present — fresh clone/CI)",
+)
+
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 def _load_pinned() -> dict[str, str]:
