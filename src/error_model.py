@@ -617,8 +617,9 @@ class ErrorModel:
                 f"{self._distributions_path}: sensor {self.sensor_name!r} mode='static' "
                 f"requires a count-weighted overall bin (dist_max - dist_min > "
                 f"{threshold}{threshold_unit}) for every axis; missing for "
-                f"{missing_overall!r}. Regenerate the CSV with the importer "
-                f"(see import_mmdet_error_models.py:335-375)."
+                f"{missing_overall!r}. Append them with "
+                f"scripts/synthesize_overall_bins.py (run automatically by "
+                f"scripts/import_sim_gpem_models.py)."
             )
         return result
 
@@ -1108,3 +1109,51 @@ class ErrorModel:
     def sample_length_error(self, distance: float, angle_deg: Optional[float] = None,
                             rng=None) -> float:
         return self.sample("length", distance, angle_deg, rng)
+
+    # ---- aggregate samplers (used by the SUMO error-injection path) ----------
+    #
+    # Restored after the error-model refactor: `sensor.py` (regression error
+    # model) and `test_sensing_errors_gauntlet` depend on these. `target_angle`
+    # is in RADIANS (sensor frame), converted to degrees for the per-axis
+    # samplers; position error is rotated distal/perp -> global x/y.
+
+    def sample_errors(self, distance: float, target_angle: float, rng=None):
+        """Sample position error in the global frame + predicted distal/perp std.
+
+        Returns ``(x_error, y_error, distal_std, perp_std)``. ``target_angle`` is
+        in radians; distal/perp are sampled in the sensor frame then rotated.
+        """
+        import math as _math
+        angle_deg = _math.degrees(target_angle)
+        distal_error = self.sample_distal_error(distance, angle_deg, rng)
+        perp_error = self.sample_perpendicular_error(distance, angle_deg, rng)
+        x_error = distal_error * _math.cos(target_angle) - perp_error * _math.sin(target_angle)
+        y_error = distal_error * _math.sin(target_angle) + perp_error * _math.cos(target_angle)
+        return (x_error, y_error,
+                self.get_distal_std(distance, angle_deg),
+                self.get_perpendicular_std(distance, angle_deg))
+
+    def sample_all_errors(self, distance: float, target_angle: float, rng=None) -> dict:
+        """Sample all errors (position, dimensions, yaw) for an object at
+        ``distance`` (m) and ``target_angle`` (radians, sensor frame).
+
+        Returns a dict of sampled errors plus the predicted per-axis stds used to
+        build the measurement covariance. Works in every mode; in ``polar`` mode
+        each axis is evaluated at ``(distance, angle)`` via its smooth polar fit.
+        """
+        import math as _math
+        angle_deg = _math.degrees(target_angle)
+        x_error, y_error, distal_std, perp_std = self.sample_errors(distance, target_angle, rng)
+        return {
+            "x_error": x_error,
+            "y_error": y_error,
+            "width_error": self.sample_width_error(distance, angle_deg, rng),
+            "length_error": self.sample_length_error(distance, angle_deg, rng),
+            "yaw_error": self.sample_yaw_error(distance, angle_deg, rng),
+            # predicted stds for covariance
+            "distal_std": distal_std,
+            "perp_std": perp_std,
+            "width_std": self.get_width_std(distance, angle_deg),
+            "length_std": self.get_length_std(distance, angle_deg),
+            "yaw_std": self.get_yaw_std(distance, angle_deg),
+        }

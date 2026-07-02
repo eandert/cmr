@@ -81,11 +81,14 @@ ANCHOR_REPLICATIONS = [
      "ab3dmot_late_fusion_default_precomputed_3d/test/summary_v2v4real_protocol.json",
      ANCHOR_KEY, None),
     ("CoBEVT + AB3DMOT (replication, DMSTrack-exact protocol)",
-     "results/V2V4Real_DMSTRACK_MG_2026-05-15_153746/"
+     # HEADTOHEAD run = 37.28 (canonical; ≈ DMSTrack paper's 37.16). The MG run
+     # gives 37.34 for the same baseline; both replicate the paper, we pin 37.28.
+     "results/V2V4Real_DMSTRACK_HEADTOHEAD_2026-05-15_145623/"
      "cobevt_precomputed_dmstrack_exact/test/summary_v2v4real_protocol.json",
      ANCHOR_KEY, None),
     ("DMSTrack (replication, DMSTrack-exact protocol)",
-     "results/V2V4Real_DMSTRACK_MG_2026-05-15_153746/"
+     # HEADTOHEAD run = 44.27 (canonical; same run as the CoBEVT anchor above).
+     "results/V2V4Real_DMSTRACK_HEADTOHEAD_2026-05-15_145623/"
      "dmstrack_precomputed_dmstrack_exact/test/summary_v2v4real_protocol.json",
      ANCHOR_KEY, None),
 ]
@@ -96,11 +99,11 @@ BEST_STREAM_KEY = "sabre_gpem_polar_av_100.0pct"
 SWEEP_CONFIGS = [
     ("pp_logodds",
      "Ours (SABRE + GPEM-polar) — PP score-0, log\\_odds (score-0 + birth gate)",
-     "results/V2V4Real_GPEM_ABLATION_4SWEEP/pp_score0_gpem_logodds/test/"
+     "results/V2V4Real_BENCHMARK_100m_rescore_20260630/pp_score0_gpem_logodds/test/"
      "summary_v2v4real_protocol.json"),
     ("pp_ab3dmot",
-     "Ours (SABRE + GPEM-polar) — PP score-0, AB3DMOT (score >= 0.3 floor)",
-     "results/V2V4Real_GPEM_ABLATION_4SWEEP/pp_score0_gpem_ab3dmot/test/"
+     "Ours (SABRE + GPEM-polar) — PP score-0, AB3DMOT (score >= 0.2 floor)",
+     "results/V2V4Real_BENCHMARK_100m_rescore_20260630/pp_score0_gpem_ab3dmot/test/"
      "summary_v2v4real_protocol.json"),
     ("cpzs_logodds",
      "Ours (SABRE + GPEM-polar) — CPZS-100m, log\\_odds (score-0 + birth gate)",
@@ -123,8 +126,8 @@ SWEEP_CONFIGS = [
 # Sanity anchors: known (V2V AMOTA, Ours-protocol AMOTA) of the best stream
 # per config.
 EXPECTED_BEST = {
-    "pp_logodds":   (36.28, 23.58),
-    "pp_ab3dmot":   (35.30, 31.55),
+    "pp_logodds":   (36.79, 23.34),
+    "pp_ab3dmot":   (38.83, 33.78),
     "cpzs_logodds": (38.01, 26.02),
     "cpzs_ab3dmot": (38.83, 33.92),
     "cpft_logodds": (42.12, 38.87),

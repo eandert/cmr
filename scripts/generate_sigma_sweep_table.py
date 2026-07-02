@@ -59,20 +59,36 @@ all_pen = sorted(glob.glob(f'results/GPEM_Penetration_Sweep_{date_str}_*'))
 print(f"Found {len(all_dist)} dist + {len(all_pen)} pen dirs for {date_str}")
 
 # Filter definitions
-filter_names = ['EKF', 'CI', 'BICI', 'AKF', 'PF']
+filter_names = ['EKF', 'CI', 'BICI', 'AKF', 'PF', 'SABRE']
 filter_gpem_modes = {
     'EKF': ['gpem_linear', 'gpem_quadratic', 'gpem_polar', 'static'],
     'CI':  ['ci_gpem_linear', 'ci_gpem_quadratic', 'ci_gpem_polar', 'ci_static'],
     'BICI':['bici_gpem_linear', 'bici_gpem_quadratic', 'bici_gpem_polar', 'bici_static'],
     'AKF': ['akf_gpem_linear', 'akf_gpem_quadratic', 'akf_gpem_polar', 'akf_static'],
     'PF':  ['pf_gpem_linear', 'pf_gpem_quadratic', 'pf_gpem_polar', 'pf_static'],
+    'SABRE':['sabre_gpem_linear', 'sabre_gpem_quadratic', 'sabre_gpem_polar', 'sabre_static'],
 }
 filter_baselines = {
     'EKF': 'baseline', 'CI': 'ci_baseline', 'BICI': 'bici_baseline',
-    'AKF': 'akf_baseline', 'PF': 'pf_baseline',
+    'AKF': 'akf_baseline', 'PF': 'pf_baseline', 'SABRE': 'sabre_baseline',
 }
 
 sigmas = [0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+
+
+def _key_matches_variant(ck, variant):
+    """True iff summary key ``ck`` is *exactly* this variant, not a longer one
+    that merely shares the suffix.
+
+    Summary keys are ``..._step_{N}_{variant}`` (distribution sweep) or
+    ``{variant}_av_{rate}pct`` (penetration sweep). A bare EKF variant like
+    ``baseline`` / ``gpem_linear`` must NOT swallow the prefixed streams
+    (``ci_baseline``, ``sabre_gpem_linear``, …) — a plain ``endswith`` does,
+    which silently turned the EKF column into a 6-filter pooled average.
+    """
+    return (re.search(r'_step_\d+_' + re.escape(variant) + r'$', ck) is not None
+            or re.match(re.escape(variant) + r'_av_[\d.]+pct$', ck) is not None)
+
 
 # Collect: sigma -> filter -> [hota_values]
 # Also: sigma -> filter -> [baseline_hota_values]
@@ -89,13 +105,13 @@ for si, (sigma, map_name) in enumerate(step_info):
             # Baseline HOTA
             bkey = filter_baselines[fname]
             for ck, cv in r.items():
-                if ck.endswith(f'_{bkey}') or ck.startswith(f'{bkey}_av_'):
+                if _key_matches_variant(ck, bkey):
                     h = cv.get('avg_hota_mean', 0)
                     if h > 0: base_hota[sigma][fname].append(h)
             # GPEM modes HOTA
             for mode in filter_gpem_modes[fname]:
                 for ck, cv in r.items():
-                    if ck.endswith(f'_{mode}') or ck.startswith(f'{mode}_av_'):
+                    if _key_matches_variant(ck, mode):
                         h = cv.get('avg_hota_mean', 0)
                         if h > 0: gpem_hota[sigma][fname].append(h)
 
@@ -137,8 +153,8 @@ print("Saved: results/sigma_sweep_heatmap.pdf")
 # ============================================================
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
-colors = {'EKF': '#1f77b4', 'CI': '#ff7f0e', 'BICI': '#2ca02c', 'AKF': '#d62728', 'PF': '#9467bd'}
-markers = {'EKF': 'o', 'CI': 's', 'BICI': 'D', 'AKF': '^', 'PF': 'v'}
+colors = {'EKF': '#1f77b4', 'CI': '#ff7f0e', 'BICI': '#2ca02c', 'AKF': '#d62728', 'PF': '#9467bd', 'SABRE': '#8c564b'}
+markers = {'EKF': 'o', 'CI': 's', 'BICI': 'D', 'AKF': '^', 'PF': 'v', 'SABRE': 'P'}
 
 # Left: GPEM HOTA
 for fname in filter_names:

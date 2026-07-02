@@ -44,10 +44,20 @@ VARIANT_MAP = {
     "pf_gpem_linear":    ("PF", "gpem_linear"),
     "pf_gpem_quadratic": ("PF", "gpem_quadratic"),
     "pf_gpem_polar":     ("PF", "gpem_polar"),
+    "bici_baseline":       ("BICI", "baseline"),
+    "bici_static":         ("BICI", "static"),
+    "bici_gpem_linear":    ("BICI", "gpem_linear"),
+    "bici_gpem_quadratic": ("BICI", "gpem_quadratic"),
+    "bici_gpem_polar":     ("BICI", "gpem_polar"),
+    "sabre_baseline":       ("SABRE", "baseline"),
+    "sabre_static":         ("SABRE", "static"),
+    "sabre_gpem_linear":    ("SABRE", "gpem_linear"),
+    "sabre_gpem_quadratic": ("SABRE", "gpem_quadratic"),
+    "sabre_gpem_polar":     ("SABRE", "gpem_polar"),
 }
 
 # Order for rows in the table
-FILTER_ORDER = ["Kalman", "CI", "AKF", "PF"]
+FILTER_ORDER = ["Kalman", "CI", "AKF", "PF", "BICI", "SABRE"]
 COV_ORDER = ["baseline", "static", "gpem_linear", "gpem_quadratic", "gpem_polar"]
 
 # Display names for filter groups (used in \multirow)
@@ -56,6 +66,8 @@ FILTER_DISPLAY = {
     "CI":     "Covariance Intersection (CI)",
     "AKF":    "Adaptive Kalman (AKF)",
     "PF":     "Particle Filter (PF)",
+    "BICI":   "Batch ICI (BICI)",
+    "SABRE":  "SABRE (Adaptive-NIS CI)",
 }
 
 # Display names for covariance modes
@@ -362,7 +374,7 @@ def generate_filter_latex(averages, rows, caption, label, improvement_base=None,
 def main():
     parser = argparse.ArgumentParser(description="Generate LaTeX table from GPEM experiment results")
     parser.add_argument("results_dir", help="Path to results directory containing summary.json")
-    parser.add_argument("--filter", choices=["kalman", "ci", "akf", "pf", "all"],
+    parser.add_argument("--filter", choices=["kalman", "ci", "akf", "pf", "bici", "sabre", "all"],
                         default="all", help="Which filter(s) to include (default: all)")
     parser.add_argument("--best-per-cov", action="store_true",
                         help="Show only the best filter for each covariance mode")
@@ -445,6 +457,8 @@ def main():
             "ci": ["CI"],
             "akf": ["AKF"],
             "pf": ["PF"],
+            "bici": ["BICI"],
+            "sabre": ["SABRE"],
             "all": FILTER_ORDER,
         }
         selected_filters = filter_map[args.filter]

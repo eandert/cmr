@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Append synthesized overall-bin rows to sensor distributions CSVs that lack them.
 
-Used to unblock the strict loader for sensors whose source data was not
-regenerated through `import_mmdet_error_models.py`'s overall-bin generator.
+The static loader requires a count-weighted overall (widest) bin per axis, which
+`regression_to_cmr_csv.py` does not emit. `scripts/import_sim_gpem_models.py` runs
+this automatically after the converter; run it standalone to backfill a sensor.
 
 Strategy per axis (e.g. 'distal'):
   - Take every per-range bin row for this axis from {sensor}_distributions.csv
@@ -20,8 +21,8 @@ Usage:
     python scripts/synthesize_overall_bins.py [sensor1] [sensor2] ...
     # (Pass sensor stems; e.g. pointpillar_v2v4real_tesla)
 
-If no sensors specified, prints the list of sensors that would benefit
-(per the loader audit) but does nothing.
+With no arguments it prints usage and exits; pass `--dry-run` to preview the rows
+a sensor would gain without writing.
 """
 from __future__ import annotations
 
@@ -187,9 +188,7 @@ def synthesize_for_sensor(sensor: str, dry_run: bool = False) -> bool:
 
     with dist_path.open("a") as f:
         f.write("\n" + MARKER + "\n")
-        f.write(f"# Aggregated as sqrt(mean(per-bin variance)) across per-{independent_var} bins.\n")
-        f.write("# This is an unweighted aggregate; the upstream generator should emit a\n")
-        f.write("# count-weighted overall row to replace these.\n")
+        f.write(f"# Overall bin: unweighted sqrt(mean(per-bin variance)) across per-{independent_var} bins.\n")
         for r in new_rows:
             f.write(r + "\n")
     return True

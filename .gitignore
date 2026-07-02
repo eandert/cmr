@@ -58,3 +58,6 @@ old/
 
 # Claude Code local settings
 .claude/
+
+# Internal/working docs — not published
+docs/dev/

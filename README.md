@@ -9,7 +9,7 @@
 In cooperative perception, multiple vehicles share sensor observations through V2X communication. The quality of these observations varies with factors such as sensor type, vehicle velocity, detection distance, and approach angle. CMR provides:
 
 - **GPEM covariance modeling** — replaces static, hand-tuned covariance matrices with parameterized models learned from sensor characterization data, including polar (angle+distance) error profiles
-- **Multi-filter fusion** — comparative evaluation across four Bayesian fusion filters (EKF, Covariance Intersection, Adaptive Kalman, Particle Filter)
+- **Multi-filter fusion** — comparative evaluation across six Bayesian fusion filters (EKF, Covariance Intersection, Adaptive Kalman, Particle Filter, Batch ICI, and SABRE)
 - **SABRE fusion** — adaptive NIS (normalized innovation squared) gating on top of Covariance Intersection: keeps CI's conservative multi-source fusion while rejecting clear outliers
 - **Polar error models** — direction-aware detection error and miss rate modeling using 2D (angle × distance) bins from real detector evaluations
 - **Trust-based anomaly detection** — per-participant scoring to identify and down-weight degraded or adversarial data sources
@@ -74,7 +74,7 @@ python3 src/experiment_runner.py --suite gpem_distribution_sweep --runs 10 --ff-
 
 ## Reproducing Paper Results
 
-> For the authoritative, versioned reproduction guide — clone → the numbers in each paper table, including the real-data evaluations — see [`docs/REPRODUCING_RESULTS.md`](docs/REPRODUCING_RESULTS.md). The SUMO-simulation reproduction is summarized below.
+> The full versioned reproduction guide (clone → every paper-table number, including the real-data evaluations) is being finalized for publication. The SUMO-simulation reproduction is summarized below.
 
 Each experiment runs 10 independent trials per configuration. The simulation timeline for each trial is:
 
@@ -82,7 +82,7 @@ Each experiment runs 10 independent trials per configuration. The simulation tim
 2. **Warmup** (`--warmup 100`) — 100 steps of full sensor/fusion processing to initialize filters, but metrics are not recorded.
 3. **Recording** (`--record 6000`) — 6000 steps (~10 minutes at 0.1s step) of full processing with metric logging (AMOTA, AMOTP, HOTA).
 
-Each trial produces 20 synchronized result streams (4 filters × 5 covariance modes) from a single shared SUMO simulation, ensuring fair comparison.
+Each trial produces 30 synchronized result streams (6 filters × 5 covariance modes) from a single shared SUMO simulation, ensuring fair comparison.
 
 ```bash
 # Paper parameters for exact reproducibility
@@ -110,14 +110,6 @@ for map in city highway rural; do
 done
 ```
 
-Approximate runtimes with 8 parallel workers:
-
-| Map | Penetration Sweep | Distribution Sweep |
-|-----|------------------|--------------------|
-| `highway` | ~60 min | ~50 min |
-| `city` | ~8 hours | ~7 hours |
-| `rural` | ~10 hours | ~8 hours |
-
 Results and plots are saved to `results/` automatically. To regenerate LaTeX tables:
 
 ```bash
@@ -133,13 +125,11 @@ datasets:
   `eval_tracking` (3D-IoU 0.25), fully-autotuned GPEM+SABRE scores **MOTA 0.7221 vs the
   late-fusion baseline 0.5486** (+0.174; ID-switches 764 → 36). Every covariance *and*
   lifecycle parameter is derived closed-form from the train-set calibration (no hand-set
-  lifecycle). Authoritative writeup + two-lever decomposition:
-  [`results/DAIR_PRELIM/B3_DAIR_AUTHORITATIVE.md`](results/DAIR_PRELIM/B3_DAIR_AUTHORITATIVE.md);
-  end-to-end reproduction of the off-repo data/detector pipeline lives in a separate DAIR-V2X integration repository (not part of this repo).
-- **V2V4Real, 2-CAV tracking.** See [`docs/V2V4REAL_EVALUATION.md`](docs/V2V4REAL_EVALUATION.md)
-  and `results/PROJECT_PLAN.md` (staged S1–S4). 3D-IoU scoring of dumped tracks uses
+  lifecycle). End-to-end reproduction of the off-repo data/detector pipeline lives in a
+  separate DAIR-V2X integration repository (not part of this repo).
+- **V2V4Real, 2-CAV tracking.** Staged S1–S4. 3D-IoU scoring of dumped tracks uses
   the full 6-DOF `lidar_pose` projection (raw drive required; `--legacy-constant-z`
-  for the pre-2026-06-29 number) — see the eval doc and `docs/LOG_ODDS_PIPELINE.md`.
+  for the pre-2026-06-29 number).
 
 ## GPEM — Generalizable Parameterized Error Model
 
@@ -150,10 +140,10 @@ Traditional cooperative perception systems use fixed covariance matrices for mea
 | Mode | R Matrix (position) | R Matrix (heading) | Description |
 |------|--------------------|--------------------|-------------|
 | **Baseline** | Weighted avg MSE across all detectors | Fixed (0.1 rad²) | Fleet-averaged covariance, no distance dependence |
-| **Static** | Per-detector avg MSE | Fixed (0.1 rad²) | Per-detector average, constant across distance |
+| **Static** | Per-detector avg MSE | Per-detector avg yaw MSE | Per-detector average, constant across distance |
 | **GPEM Linear** | `bias(d)² + var(d)` via linear regression | `yaw_bias(d)² + yaw_var(d)` | Distance-dependent MSE from linear regression |
 | **GPEM Quadratic** | `bias(d)² + var(d)` via quadratic regression | `yaw_bias(d)² + yaw_var(d)` | Distance-dependent MSE from quadratic regression |
-| **GPEM Polar** | Direct std² lookup from polar bins | `yaw_bias(d)² + yaw_var(d)` | Angle+distance bin lookup (most granular) |
+| **GPEM Polar** | Smooth polar fit `((a+b·r)(1+c·cos θ+d·cos 2θ))²` | `yaw_bias(d)² + yaw_var(d)` | Range+angle-dependent std from the polar coefficient fit (most granular) |
 
 ### How Regressions Are Used
 
@@ -177,19 +167,26 @@ This captures both the systematic offset (bias) and random spread (variance) of 
 
 For heading measurements (yaw), the same MSE principle applies. Previous versions used a hardcoded `0.1 rad²` (~18° std); GPEM modes now use the detector's distance-dependent yaw MSE, which is typically 0.007–0.027 rad² (4–14× tighter).
 
-GPEM models are fit from error characterization data for each detector (DETR3D, BEV Fusion, CenterPoint) and localizer (KISS-ICP, ORB-SLAM3). Detector models use polar bins (21 distance × 36 angle = 756 bins per error type at 100m range).
+GPEM models are fit from error characterization data for each detector (DETR3D, BEV Fusion, CenterPoint) and localizer (KISS-ICP, ORB-SLAM3). Polar mode evaluates a smooth per-axis fit `std(r,θ) = (a+b·r)(1+c·cos θ+d·cos 2θ)` for the R matrix; the polar *bins* (21 distance × 36 angle per error type at 100m range) feed the data-driven birth gate, not R.
 
 ### Error Model Pipeline
 
-Error models are imported from [mmdetection3d](https://github.com/open-mmlab/mmdetection3d) evaluation results:
+GPEM error models are **fitted** in [mmdetection3d](https://github.com/open-mmlab/mmdetection3d)
+and imported into `src/data/sensor_models/`. For the **simulator** detectors
+(DETR3D, BEVFusion, CenterPoint), the import is one command:
 
 ```bash
-# Import detector error models (100m polar + distance-only)
-python3 scripts/import_mmdet_error_models.py
-
-# Import localizer error models (velocity-binned)
-python3 scripts/import_localizer_binned.py
+python3 scripts/import_sim_gpem_models.py            # fit → CMR CSVs (incl. polar_std) + verify
+python3 scripts/import_localizer_binned.py           # localizer error models (velocity-binned)
 ```
+
+**GPEM is a smooth fit, not a bin lookup** — `mode='polar'` reads the `polar_std_*`
+coefficients, so detectors are imported through the fitter that emits them
+(`import_sim_gpem_models.py` delegates to mmdetection3d's `regression_to_cmr_csv.py`
+then appends the static overall bins, and verifies every mode loads). Full
+step-by-step (simulation) — manifest, the two-step chain, and verification — lives
+in **[docs/IMPORTING_GPEM_MODELS.md](docs/IMPORTING_GPEM_MODELS.md)**. (V2V4Real
+detectors are imported by the bucket pipeline below.)
 
 ### Rebuilding a detector's GPEM model + birth gate
 
@@ -213,7 +210,7 @@ Steps 3+4 were previously manual and easily skipped; folding them into `--rebuil
 
 ## Fusion Filters
 
-CMR evaluates four Bayesian fusion filters. Each GPEM experiment runs all four in parallel via a triple-fusion mechanism — a single SUMO simulation produces 20 result streams (4 filters × 5 covariance modes):
+CMR evaluates six Bayesian fusion filters. Each GPEM experiment runs all six in parallel via a triple-fusion mechanism — a single SUMO simulation produces 30 result streams (6 filters × 5 covariance modes):
 
 | Filter | Description |
 |--------|-------------|
@@ -221,6 +218,8 @@ CMR evaluates four Bayesian fusion filters. Each GPEM experiment runs all four i
 | **CI** | Covariance Intersection — conservative multi-source fusion without cross-correlation assumptions |
 | **AKF** | Adaptive Kalman Filter — extends EKF with online process noise adaptation via innovation monitoring |
 | **PF** | Particle Filter — Sequential Importance Resampling (SIR), 500 particles |
+| **BICI** | Batch Inverse Covariance Intersection — N-way simultaneous CI optimization that fuses all measurements at once, rather than pairwise |
+| **SABRE** | Source-Adaptive Batch Reliability Estimation — BICI with per-source adaptive-NIS gating that rejects clear outliers while retaining CI's conservatism (the paper's second contribution) |
 
 ## Maps
 
